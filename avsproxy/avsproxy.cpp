@@ -500,6 +500,11 @@ public:
 		m_client = std::make_unique<ipc_client::IPCClient>(ipc_client::IPCClient::master(), slave_path.c_str());
 		m_client->start(std::bind(&AVSProxy::recv_callback, this, std::placeholders::_1));
 
+		if (in.contains("slave_log")) {
+			std::wstring log_path = utf8_to_utf16(in.get_prop<std::string>("slave_log"));
+			m_client->send_async(std::make_unique<ipc_client::CommandSetLogFile>(log_path));
+		}
+
 		std::unique_ptr<ipc_client::Command> response;
 
 		response = m_client->send_sync(std::make_unique<ipc_client::CommandLoadAvisynth>(avisynth_path.c_str()));
@@ -597,6 +602,7 @@ const PluginInfo g_plugin_info{
 			"clip_names:data[]:opt;"
 			"avisynth:data:opt;"
 			"slave:data:opt;"
+			"slave_log:data:opt;"
 		}
 	}
 };
