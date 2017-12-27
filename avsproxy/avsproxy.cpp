@@ -1,8 +1,11 @@
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <VSHelper.h>
 #include <Windows.h>
 #include "ipc/ipc_client.h"
@@ -237,18 +240,93 @@ VideoFrame heap_to_local_frame(ipc_client::IPCClient *client, const ::VSVideoInf
 	}
 }
 
-ipc::VideoFrame local_to_heap_frame(ipc_client::IPCClient *client, uint32_t clip_id, int32_t n, const ::VSVideoInfo &vi, int32_t color_family, const ConstVideoFrame &frame)
+ipc::VideoFrame local_to_heap_frame(ipc_client::IPCClient *client, uint32_t clip_id, int32_t n, const ::VSVideoInfo &vi, const ConstVideoFrame &frame)
 {
-	throw std::runtime_error{ "not implemented" };
+	ipc::VideoFrame ipc_frame{ { clip_id, n } };
+	size_t size = 0;
+
+	if (vi.format->colorFamily == ::cmRGB || vi.format->id == ::pfCompatBGR32 || vi.format->id == ::pfCompatYUY2) {
+		int rowsize = vi.width * (vi.format->id == ::pfCompatYUY2 ? 2 : 4);
+		ipc_frame.stride[0] = rowsize % 64 ? rowsize + 64 - rowsize % 64 : rowsize;
+		ipc_frame.height[0] = vi.height;
+		size = ipc_frame.stride[0] * vi.height;
+	} else {
+		for (int p = 0; p < vi.format->numPlanes; ++p) {
+			int rowsize = vi.width;
+			ipc_frame.stride[p] = rowsize % 64 ? rowsize + 64 - rowsize % 64 : rowsize;
+			ipc_frame.height[p] = frame.height(p);
+			size += ipc_frame.stride[p] * ipc_frame.height[p];
+		}
+	}
+
+	unsigned char *dst_ptr = static_cast<unsigned char *>(client->allocate(size));
+	ipc_frame.heap_offset = client->pointer_to_offset(dst_ptr);
+
+	if (vi.format->colorFamily == ::cmRGB) {
+		ConstVideoFrame alpha = frame.frame_props_ro().get_prop<ConstVideoFrame>("_Alpha", map::Ignore{});
+		p2p_buffer_param param{};
+
+		param.src[0] = frame.read_ptr(0);
+		param.src[1] = frame.read_ptr(1);
+		param.src[2] = frame.read_ptr(2);
+		param.src[3] = alpha ? alpha.read_ptr(0) : nullptr;
+
+		param.src_stride[0] = frame.stride(0);
+		param.src_stride[1] = frame.stride(1);
+		param.src_stride[2] = frame.stride(2);
+		param.src_stride[3] = alpha ? alpha.stride(0) : 0;
+
+		param.dst[0] = dst_ptr;
+		param.dst_stride[0] = ipc_frame.stride[0];
+
+		param.width = vi.width;
+		param.height = vi.height;
+		param.packing = p2p_argb32_le;
+
+		p2p_pack_frame(&param, P2P_ALPHA_SET_ONE);
+	} else {
+		for (int p = 0; p < vi.format->numPlanes; ++p) {
+			int rowsize = vi.width;
+
+			if (vi.format->id == ::pfCompatBGR32)
+				rowsize *= 4;
+			else if (vi.format->id == ::pfCompatYUY2)
+				rowsize *= 2;
+
+			vs_bitblt(dst_ptr, ipc_frame.stride[p], frame.read_ptr(p), frame.stride(p), rowsize, frame.height(p));
+		}
+	}
+
+	return ipc_frame;
 }
 
 } // namespace
 
 
 class AVSProxy : public vsxx::FilterBase {
+	struct clip_info {
+		FilterNode node;
+		std::deque<int32_t> requested;
+	};
+
 	std::unique_ptr<ipc_client::IPCClient> m_client;
+	std::unordered_map<uint32_t, clip_info> m_clips;
 	ipc::Value m_script_result;
 	::VSVideoInfo m_vi;
+
+	std::deque<std::unique_ptr<ipc_client::Command>> m_command_queue;
+	std::unique_ptr<ipc_client::Command> m_getframe_response;
+	std::mutex m_mutex;
+	std::condition_variable m_cond;
+	std::atomic_uint32_t m_active_request;
+	std::atomic_bool m_getframe_response_received;
+	std::atomic_bool m_remote_exit;
+
+	void fatal()
+	{
+		m_client->stop();
+		m_remote_exit = true;
+	}
 
 	void throw_on_error(ipc_client::Command *c, ipc_client::CommandType expected_type = ipc_client::CommandType::ACK) const
 	{
@@ -260,9 +338,147 @@ class AVSProxy : public vsxx::FilterBase {
 			throw std::runtime_error{ "unexpected resposne received for command" };
 	}
 
-	void recv_callback(std::unique_ptr<ipc_client::Command> c) {}
+	void recv_callback(std::unique_ptr<ipc_client::Command> c)
+	{
+		if (!c) {
+			m_remote_exit = true;
+			m_cond.notify_all();
+			return;
+		}
+
+		{
+			std::lock_guard<std::mutex> lock{ m_mutex };
+			m_command_queue.emplace_back(std::move(c));
+		}
+		m_cond.notify_all();
+		return;
+	}
+
+	void getframe_callback(uint32_t request, std::unique_ptr<ipc_client::Command> c)
+	{
+		if (m_active_request == request) {
+			m_getframe_response_received = true;
+			m_getframe_response = std::move(c);
+
+			m_cond.notify_all();
+		} else {
+			send_err(c->transaction_id());
+		}
+	}
+
+	void send_ack(uint32_t response_id)
+	{
+		if (response_id == ipc_client::INVALID_TRANSACTION)
+			return;
+
+		auto response = std::make_unique<ipc_client::CommandAck>();
+		response->set_response_id(response_id);
+		m_client->send_async(std::move(response));
+	}
+
+	void send_err(uint32_t response_id)
+	{
+		if (response_id == ipc_client::INVALID_TRANSACTION)
+			return;
+
+		auto response = std::make_unique<ipc_client::CommandErr>();
+		response->set_response_id(response_id);
+		m_client->send_async(std::move(response));
+	}
+
+	void reject_commands()
+	{
+		std::lock_guard<std::mutex> lock{ m_mutex };
+
+		// Reject any slave activity from a previous frame.
+		while (!m_command_queue.empty()) {
+			std::unique_ptr<ipc_client::Command> c{ std::move(m_command_queue.front()) };
+			m_command_queue.pop_front();
+			send_err(c->transaction_id());
+		}
+	}
+
+	void service_remote_getframe(std::unique_ptr<ipc_client::CommandGetFrame> c)
+	{
+		auto it = m_clips.find(c->arg().clip_id);
+		if (it == m_clips.end()) {
+			send_err(c->transaction_id());
+			return;
+		}
+
+		ConstVideoFrame frame;
+
+		try {
+			frame = it->second.node.get_frame(c->arg().frame_number);
+		} catch (...) {
+			send_err(c->transaction_id());
+			return;
+		}
+
+		ipc::VideoFrame ipc_frame = local_to_heap_frame(m_client.get(), c->arg().clip_id, c->arg().frame_number, m_vi, frame);
+		std::unique_ptr<ipc_client::Command> response = std::make_unique<ipc_client::CommandSetFrame>(ipc_frame);
+		response->set_response_id(c->transaction_id());
+		m_client->send_async(std::move(response));
+	}
+
+	std::unique_ptr<ipc_client::CommandSetFrame> get_frame_runloop(int n)
+	{
+		if (m_remote_exit)
+			throw std::runtime_error{ "remote process exited" };
+
+		reject_commands();
+
+		m_getframe_response.reset();
+		m_getframe_response_received = false;
+		m_client->send_async(
+			std::make_unique<ipc_client::CommandGetFrame>(ipc::VideoFrameRequest{ m_script_result.c.clip_id, n }),
+			std::bind(&AVSProxy::getframe_callback, this, ++m_active_request, std::placeholders::_1));
+
+		std::unique_lock<std::mutex> lock{ m_mutex };
+
+		while (true) {
+			m_cond.wait(lock);
+
+			if (m_remote_exit)
+				throw std::runtime_error{ "remote process exited" };
+
+			if (m_getframe_response_received)
+				break;
+
+			while (!m_command_queue.empty()) {
+				std::unique_ptr<ipc_client::Command> c{ std::move(m_command_queue.front()) };
+				m_command_queue.pop_front();
+
+				if (c->type() != ipc_client::CommandType::GET_FRAME) {
+					send_err(c->transaction_id());
+					continue;
+				}
+
+				std::unique_ptr<ipc_client::CommandGetFrame> get{ static_cast<ipc_client::CommandGetFrame *>(c.release()) };
+				service_remote_getframe(std::move(get));
+			}
+		}
+
+		lock.unlock();
+		reject_commands();
+
+		if (m_getframe_response)
+			send_ack(m_getframe_response->transaction_id());
+
+		throw_on_error(m_getframe_response.get(), ipc_client::CommandType::SET_FRAME);
+
+		return std::unique_ptr<ipc_client::CommandSetFrame>{
+			static_cast<ipc_client::CommandSetFrame *>(m_getframe_response.release())
+		};
+	}
 public:
-	explicit AVSProxy(void *) : m_script_result{}, m_vi{} {}
+	explicit AVSProxy(void *) :
+		m_script_result{},
+		m_vi{},
+		m_active_request{},
+		m_getframe_response_received{},
+		m_remote_exit {}
+	{}
 
 	const char *get_name(int index) noexcept override { return "Avisynth 32-bit proxy"; }
 
@@ -286,6 +502,27 @@ public:
 
 		response = m_client->send_sync(std::make_unique<ipc_client::CommandLoadAvisynth>(avisynth_path.c_str()));
 		throw_on_error(response.get());
+
+		if (in.contains("clips")) {
+			size_t num_clips = in.num_elements("clips");
+
+			if (!in.contains("clip_names") || in.num_elements("clip_names") != num_clips)
+				throw std::runtime_error{ "clips and num_clips must have same number of elements" };
+
+			for (size_t i = 0; i < num_clips; ++i) {
+				FilterNode node = in.get_prop<FilterNode>("clips", static_cast<int>(i));
+				std::string name = in.get_prop<std::string>("clip_names", static_cast<int>(i));
+
+				ipc::Value value{ ipc::Value::CLIP };
+				value.c.clip_id = static_cast<int>(i);
+				value.c.vi = serialize_video_info(node.video_info());
+
+				response = m_client->send_sync(std::make_unique<ipc_client::CommandSetScriptVar>(name, value));
+				throw_on_error(response.get());
+
+				m_clips[static_cast<int>(i)].node = std::move(node);
+			}
+		}
 
 		uint32_t heap_script = local_to_heap_str(m_client.get(), script.c_str(), script.size());
 		response = m_client->send_sync(std::make_unique<ipc_client::CommandEvalScript>(heap_script));
@@ -333,17 +570,15 @@ public:
 		return{ &m_vi, 1 };
 	}
 
-	ConstVideoFrame get_frame_initial(int n, const VapourCore &core, ::VSFrameContext *frame_ctx) override
+	ConstVideoFrame get_frame_initial(int n, const VapourCore &core, ::VSFrameContext *) override
 	{
-		auto result = m_client->send_sync(
-			std::make_unique<ipc_client::CommandGetFrame>(ipc::VideoFrameRequest{ m_script_result.c.clip_id, n }));
-		throw_on_error(result.get(), ipc_client::CommandType::SET_FRAME);
-
-		ipc_client::CommandSetFrame *set_frame = static_cast<ipc_client::CommandSetFrame *>(result.get());
-		if (set_frame->arg().request.clip_id != m_script_result.c.clip_id || set_frame->arg().request.frame_number != n)
-			throw std::runtime_error{ "remote get frame returned wrong frame" };
-
-		return heap_to_local_frame(m_client.get(), m_vi, m_script_result.c.vi.color_family, set_frame->arg(), core);
+		try {
+			std::unique_ptr<ipc_client::CommandSetFrame> response = get_frame_runloop(n);
+			return heap_to_local_frame(m_client.get(), m_vi, m_script_result.c.vi.color_family, response->arg(), core);
+		} catch (const ipc_client::IPCError &) {
+			fatal();
+			throw;
+		}
 	}
 
 	ConstVideoFrame get_frame(int n, const VapourCore &core, ::VSFrameContext *frame_ctx) override
@@ -356,6 +591,8 @@ const PluginInfo g_plugin_info{
 	PLUGIN_ID, "avsw", "avsproxy", {
 		{ &vsxx::FilterBase::filter_create<AVSProxy>, "eval",
 			"script:data;"
+			"clips:clip[]:opt;"
+			"clip_names:data[]:opt;"
 			"avisynth:data:opt;"
 			"slave:data:opt;"
 		}
