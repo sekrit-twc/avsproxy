@@ -138,16 +138,16 @@ ipc::VideoInfo serialize_video_info(const ::VideoInfo &vi)
 
 	try {
 		for (int p = 0; p < num_planes; ++p) {
-			if (vi.RowSize(p) > ipc_frame.stride[p])
+			if (vi.RowSize(plane_order[p]) > ipc_frame.stride[p])
 				throw AvisynthError_{ "wrong width" };
 			if (ipc_frame.height[p] != vi.height >> (p ? vi.GetPlaneHeightSubsampling(plane_order[p]) : 0))
 				throw AvisynthError_{ "wrong height" };
 		}
 
+		const unsigned char *src_ptr = static_cast<const unsigned char *>(heap_ptr);
 		::PVideoFrame frame = env->NewVideoFrame(vi);
 
 		for (int p = 0; p < num_planes; ++p) {
-			const unsigned char *src_ptr = static_cast<const unsigned char *>(heap_ptr);
 			int avs_plane = plane_order[p];
 
 			env->BitBlt(frame->GetWritePtr(avs_plane), frame->GetPitch(avs_plane), src_ptr, ipc_frame.stride[p], frame->GetRowSize(avs_plane), frame->GetHeight(avs_plane));

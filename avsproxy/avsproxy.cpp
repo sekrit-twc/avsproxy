@@ -79,6 +79,7 @@ uint32_t local_to_heap_str(ipc_client::IPCClient *client, const char *str, size_
 		break;
 	case ipc::VideoInfo::YUV:
 		vi.format = core.register_format(cmYUV, ::stInteger, 8, ipc_vi.subsample_w, ipc_vi.subsample_h);
+		break;
 	case ipc::VideoInfo::GRAY:
 		vi.format = core.format_preset(::pfGray8);
 		break;
@@ -252,7 +253,7 @@ ipc::VideoFrame local_to_heap_frame(ipc_client::IPCClient *client, uint32_t clip
 		size = ipc_frame.stride[0] * vi.height;
 	} else {
 		for (int p = 0; p < vi.format->numPlanes; ++p) {
-			int rowsize = vi.width;
+			int rowsize = frame.width(p);
 			ipc_frame.stride[p] = rowsize % 64 ? rowsize + 64 - rowsize % 64 : rowsize;
 			ipc_frame.height[p] = frame.height(p);
 			size += ipc_frame.stride[p] * ipc_frame.height[p];
@@ -286,7 +287,7 @@ ipc::VideoFrame local_to_heap_frame(ipc_client::IPCClient *client, uint32_t clip
 		p2p_pack_frame(&param, P2P_ALPHA_SET_ONE);
 	} else {
 		for (int p = 0; p < vi.format->numPlanes; ++p) {
-			int rowsize = vi.width;
+			int rowsize = frame.width(p);
 
 			if (vi.format->id == ::pfCompatBGR32)
 				rowsize *= 4;
@@ -294,6 +295,7 @@ ipc::VideoFrame local_to_heap_frame(ipc_client::IPCClient *client, uint32_t clip
 				rowsize *= 2;
 
 			vs_bitblt(dst_ptr, ipc_frame.stride[p], frame.read_ptr(p), frame.stride(p), rowsize, frame.height(p));
+			dst_ptr += rowsize * frame.height(p);
 		}
 	}
 
@@ -415,7 +417,7 @@ class AVSProxy : public vsxx::FilterBase {
 			return;
 		}
 
-		ipc::VideoFrame ipc_frame = local_to_heap_frame(m_client.get(), c->arg().clip_id, c->arg().frame_number, m_vi, frame);
+		ipc::VideoFrame ipc_frame = local_to_heap_frame(m_client.get(), c->arg().clip_id, c->arg().frame_number, it->second.node.video_info(), frame);
 		std::unique_ptr<ipc_client::Command> response = std::make_unique<ipc_client::CommandSetFrame>(ipc_frame);
 		response->set_response_id(c->transaction_id());
 		m_client->send_async(std::move(response));
