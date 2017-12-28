@@ -75,7 +75,7 @@ protected:
 		if (len == ~static_cast<size_t>(0))
 			throw_deserialization_error("buffer overrun");
 
-		std::string str('\0', len);
+		std::string str(len, '\0');
 		ipc::deserialize_str(&str[0], buf, size);
 		return std::make_unique<Command_Args1_str>(str);
 	}
@@ -100,7 +100,7 @@ protected:
 		if (len == ~static_cast<size_t>(0))
 			throw_deserialization_error("buffer overrun");
 
-		std::wstring str('\0', len);
+		std::wstring str(len, '\0');
 		ipc::deserialize_wstr(&str[0], buf, size);
 		return std::make_unique<Command_Args1_wstr>(str);
 	}

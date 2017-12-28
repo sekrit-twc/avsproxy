@@ -25,15 +25,11 @@ std::wstring create_slave_command(const std::wstring &slave_path, ::HANDLE shmem
 	if (slave_path.empty() || slave_path.find(L'"') != std::wstring::npos || slave_path.back() == L'\\')
 		throw IPCError{ "invalid characters in path" };
 
-	int len = _snwprintf(nullptr, 0, FORMAT);
-	assert(len >= 0);
+	std::wstring cmd(MAX_PATH, L'\0');
 
-	std::wstring cmd(len, L'\0');
-	int result = _snwprintf(&cmd[0], cmd.size(), FORMAT);
-	assert(len == result);
-
-	if (cmd.size() < MAX_PATH)
-		cmd.resize(MAX_PATH);
+	while (std::swprintf(&cmd[0], cmd.size(), FORMAT) < 0) {
+		cmd.resize(cmd.size() * 2);
+	}
 
 	return cmd;
 #undef FORMAT
