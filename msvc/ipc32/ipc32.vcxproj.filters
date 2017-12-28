@@ -15,42 +15,42 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\ipc\win32util.h">
+    <ClInclude Include="..\..\ipc\ipc_client.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\ipc\ipc_types.h">
+    <ClInclude Include="..\..\ipc\ipc_commands.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\ipc\ipc_client.h">
+    <ClInclude Include="..\..\ipc\ipc_types.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\ipc\ipc_commands.h">
+    <ClInclude Include="..\..\ipc\logging.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\ipc\video_types.h">
+    <ClInclude Include="..\..\ipc\video_types.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\ipc\logging.h">
+    <ClInclude Include="..\..\ipc\win32util.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\ipc\win32util.cpp">
+    <ClCompile Include="..\..\ipc\ipc_client.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\ipc\ipc_commands.cpp">
+    <ClCompile Include="..\..\ipc\ipc_commands.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\ipc\ipc_types.cpp">
+    <ClCompile Include="..\..\ipc\ipc_types.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\ipc\video_types.cpp">
+    <ClCompile Include="..\..\ipc\logging.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\ipc\ipc_client.cpp">
+    <ClCompile Include="..\..\ipc\video_types.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\ipc\logging.cpp">
+    <ClCompile Include="..\..\ipc\win32util.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

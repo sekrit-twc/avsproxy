@@ -6,7 +6,6 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
-#include <VSHelper.h>
 #include <Windows.h>
 #include "ipc/ipc_client.h"
 #include "ipc/ipc_commands.h"

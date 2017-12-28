@@ -20,8 +20,8 @@
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>15.0</VCProjectVersion>
-    <ProjectGuid>{EE8AD919-DBB0-48C8-9A90-D38801B57218}</ProjectGuid>
-    <RootNamespace>ipc64</RootNamespace>
+    <ProjectGuid>{FA633448-2C1C-4655-9976-D637390CE8C5}</ProjectGuid>
+    <RootNamespace>ipc32</RootNamespace>
     <WindowsTargetPlatformVersion>10.0.16299.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -70,7 +70,7 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup />
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
@@ -79,7 +79,7 @@
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_SCL_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
@@ -119,20 +119,20 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="..\ipc\ipc_client.h" />
-    <ClInclude Include="..\ipc\ipc_commands.h" />
-    <ClInclude Include="..\ipc\ipc_types.h" />
-    <ClInclude Include="..\ipc\logging.h" />
-    <ClInclude Include="..\ipc\video_types.h" />
-    <ClInclude Include="..\ipc\win32util.h" />
+    <ClInclude Include="..\..\ipc\ipc_client.h" />
+    <ClInclude Include="..\..\ipc\ipc_commands.h" />
+    <ClInclude Include="..\..\ipc\ipc_types.h" />
+    <ClInclude Include="..\..\ipc\logging.h" />
+    <ClInclude Include="..\..\ipc\video_types.h" />
+    <ClInclude Include="..\..\ipc\win32util.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\ipc\ipc_client.cpp" />
-    <ClCompile Include="..\ipc\ipc_commands.cpp" />
-    <ClCompile Include="..\ipc\ipc_types.cpp" />
-    <ClCompile Include="..\ipc\logging.cpp" />
-    <ClCompile Include="..\ipc\video_types.cpp" />
-    <ClCompile Include="..\ipc\win32util.cpp" />
+    <ClCompile Include="..\..\ipc\ipc_client.cpp" />
+    <ClCompile Include="..\..\ipc\ipc_commands.cpp" />
+    <ClCompile Include="..\..\ipc\ipc_types.cpp" />
+    <ClCompile Include="..\..\ipc\logging.cpp" />
+    <ClCompile Include="..\..\ipc\video_types.cpp" />
+    <ClCompile Include="..\..\ipc\win32util.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

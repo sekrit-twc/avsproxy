@@ -1,0 +1,66 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="Header Files\libp2p">
+      <UniqueIdentifier>{69e46d67-5883-41c1-be96-e80f8dada110}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\libp2p">
+      <UniqueIdentifier>{a03ddded-98a8-49ba-9b65-cd5e5d4c8d66}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\vsxx">
+      <UniqueIdentifier>{35d6a7aa-b110-4234-9d63-9d8f0e806a3e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\vsxx">
+      <UniqueIdentifier>{b1e06c37-0d5e-4b31-8d7e-1e52f926a0a8}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\avsproxy\avsproxy.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\libp2p\p2p_api.cpp">
+      <Filter>Source Files\libp2p</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\libp2p\v210.cpp">
+      <Filter>Source Files\libp2p</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\vsxx\vsxx_pluginmain.cpp">
+      <Filter>Source Files\vsxx</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\libp2p\p2p.h">
+      <Filter>Header Files\libp2p</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\libp2p\p2p_api.h">
+      <Filter>Header Files\libp2p</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\vsxx\VapourSynth.h">
+      <Filter>Header Files\vsxx</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\vsxx\VapourSynth++.hpp">
+      <Filter>Header Files\vsxx</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\vsxx\VSHelper.h">
+      <Filter>Header Files\vsxx</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\vsxx\VSScript.h">
+      <Filter>Header Files\vsxx</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\vsxx\vsxx_pluginmain.h">
+      <Filter>Header Files\vsxx</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>
