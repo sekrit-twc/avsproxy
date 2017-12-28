@@ -514,7 +514,7 @@ public:
 			size_t num_clips = in.num_elements("clips");
 
 			if (!in.contains("clip_names") || in.num_elements("clip_names") != num_clips)
-				throw std::runtime_error{ "clips and num_clips must have same number of elements" };
+				throw std::runtime_error{ "clips and clip_names must have same number of elements" };
 
 			for (size_t i = 0; i < num_clips; ++i) {
 				FilterNode node = in.get_prop<FilterNode>("clips", static_cast<int>(i));
