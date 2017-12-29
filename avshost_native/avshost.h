@@ -27,6 +27,7 @@ class IPCClient;
 
 namespace avs {
 
+class Cache;
 class VirtualClip;
 
 class AvisynthError_ : public std::runtime_error {
@@ -63,6 +64,7 @@ class AvisynthHost : public ipc_client::CommandObserver {
 	create_script_env m_create_script_env;
 	std::unique_ptr<::IScriptEnvironment, IScriptEnvironmentDeleter> m_env;
 
+	std::unique_ptr<Cache> m_cache;
 	std::unordered_map<uint32_t, PClip_> m_remote_clips;
 	std::unordered_map<uint32_t, PClip_> m_local_clips;
 	uint32_t m_local_clip_id;

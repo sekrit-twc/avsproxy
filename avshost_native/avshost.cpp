@@ -3,6 +3,7 @@
 #include <cstring>
 #include <deque>
 #include <new>
+#include <tuple>
 #include <utility>
 #include <Windows.h>
 #include "ipc/ipc_client.h"
@@ -204,55 +205,81 @@ ipc::VideoFrame local_to_heap_frame(ipc_client::IPCClient *client, uint32_t clip
   }
 
 
+class Cache {
+	static constexpr size_t MEMORY_MAX = 8 * (1 << 20UL);
+
+	std::deque<std::tuple<uint32_t, int, ::PVideoFrame>> m_cache;
+	size_t m_memory_usage;
+public:
+	Cache() : m_memory_usage{} {}
+
+	void insert(uint32_t clip_id, int n, ::PVideoFrame frame)
+	{
+		size_t size = frame->GetFrameBuffer()->GetDataSize();
+
+		if (size > MEMORY_MAX)
+			return;
+
+		while (MEMORY_MAX - m_memory_usage < size) {
+			::PVideoFrame frame = std::get<2>(m_cache.back());
+			m_cache.pop_back();
+			m_memory_usage -= frame->GetFrameBuffer()->GetDataSize();
+		}
+
+		m_cache.emplace_back(clip_id, n, frame);
+		m_memory_usage += size;
+	}
+
+	::PVideoFrame find(uint32_t clip_id, int n)
+	{
+		auto it = std::find_if(m_cache.begin(), m_cache.end(), [=](const std::tuple<uint32_t, int, ::PVideoFrame> &x)
+		{
+			return std::get<0>(x) == clip_id && std::get<1>(x) == n;
+		});
+
+		if (it == m_cache.end())
+			return nullptr;
+
+		auto val = *it;
+		m_cache.erase(it);
+		m_cache.emplace_front(val);
+		return std::get<2>(val);
+	}
+};
+
+
 class VirtualClip : public ::IClip {
 	ipc_client::IPCClient *m_client;
-	std::deque<std::pair<int, ::PVideoFrame>> m_cache;
+	Cache *m_cache;
 	uint32_t m_clip_id;
 	::VideoInfo m_vi;
-
-	std::deque<std::pair<int, ::PVideoFrame>>::const_iterator find(int n)
-	{
-		return std::find_if(m_cache.begin(), m_cache.end(), [=](const std::pair<int, ::PVideoFrame> &x) { return x.first == n; });
-	}
 public:
-	VirtualClip(ipc_client::IPCClient *client, uint32_t clip_id, const ::VideoInfo &vi) :
+	VirtualClip(ipc_client::IPCClient *client, Cache *cache, uint32_t clip_id, const ::VideoInfo &vi) :
 		m_client{ client },
+		m_cache{ cache },
 		m_clip_id{ clip_id },
 		m_vi(vi)
 	{}
 
-	void SetFrame(int n, const ::PVideoFrame &frame)
-	{
-		auto it = find(n);
-		if (it != m_cache.end())
-			return;
-
-		m_cache.emplace_front(n, frame);
-		if (m_cache.size() > 7)
-			m_cache.resize(7);
-	}
-
 	::PVideoFrame __stdcall GetFrame(int n, ::IScriptEnvironment *env) override
 	{
-		auto it = find(n);
+		::PVideoFrame frame = m_cache->find(m_clip_id, n);
 
-		if (it != m_cache.end()) {
-			auto val = *it;
-			m_cache.erase(it);
-			m_cache.emplace_front(val);
-			return val.second;
+		if (!frame) {
+			ipc_log("clip %u frame %d not prefetched\n", m_clip_id, n);
+
+			auto response = m_client->send_sync(std::make_unique<ipc_client::CommandGetFrame>(ipc::VideoFrameRequest{ m_clip_id, n }));
+			if (!response || response->type() != ipc_client::CommandType::SET_FRAME)
+				env->ThrowError("remote get frame failed");
+
+			ipc_client::CommandSetFrame *set_frame = static_cast<ipc_client::CommandSetFrame *>(response.get());
+			if (set_frame->arg().request.clip_id != m_clip_id || set_frame->arg().request.frame_number != n)
+				env->ThrowError("remote get frame returned wrong frame");
+
+			frame = heap_to_local_frame(m_client, m_vi, set_frame->arg(), env);
+			m_cache->insert(m_clip_id, n, frame);
 		}
 
-		auto response = m_client->send_sync(std::make_unique<ipc_client::CommandGetFrame>(ipc::VideoFrameRequest{ m_clip_id, n }));
-		if (!response || response->type() != ipc_client::CommandType::SET_FRAME)
-			env->ThrowError("remote get frame failed");
-
-		ipc_client::CommandSetFrame *set_frame = static_cast<ipc_client::CommandSetFrame *>(response.get());
-		if (set_frame->arg().request.clip_id != m_clip_id || set_frame->arg().request.frame_number != n)
-			env->ThrowError("remote get frame returned wrong frame");
-
-		::PVideoFrame frame = heap_to_local_frame(m_client, m_vi, set_frame->arg(), env);
-		SetFrame(set_frame->arg().request.frame_number, frame);
 		return frame;
 	}
 
@@ -349,6 +376,8 @@ int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandLoadAvisynth> c)
 
 		if (!m_env)
 			throw AvisynthError_{ "avisynth library has incompatible interface version" };
+
+		m_cache = std::make_unique<Cache>();
 	} catch (...) {
 		m_library.reset();
 		m_create_script_env = nullptr;
@@ -370,10 +399,13 @@ int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandNewScriptEnv> c)
 	if (!m_env)
 		throw AvisynthError_{ "avisynth library has incompatible interface version" };
 
-	m_remote_clips.clear();
 	m_local_clips.clear();
+	m_remote_clips.clear();
+	m_cache.reset();
+
 	m_env = std::move(env);
 	AVS_linkage = m_env->GetAVSLinkage();
+	m_cache = std::make_unique<Cache>();
 	AVS_EX_END
 
 	return 0;
@@ -412,7 +444,7 @@ int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandSetScriptVar> c)
 		ipc_log("remote clip %u: %dx%d %d/%d/%d\n",
 		        c->value().c.clip_id, vi.width, vi.height, vi.color_family, vi.subsample_w, vi.subsample_h);
 
-		PClip clip = new VirtualClip{ m_client, c->value().c.clip_id, deserialize_video_info(vi) };
+		PClip clip = new VirtualClip{ m_client, m_cache.get(), c->value().c.clip_id, deserialize_video_info(vi) };
 		m_env->SetVar(c->name().c_str(), clip);
 		m_remote_clips[c->value().c.clip_id] = clip;
 		break;
@@ -502,7 +534,7 @@ int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandSetFrame> c)
 	AVS_EX_BEGIN
 	VirtualClip *clip = static_cast<VirtualClip *>(it->second.get().operator void *());
 	::PVideoFrame frame = heap_to_local_frame(m_client, clip->GetVideoInfo(), c->arg(), m_env.get());
-	clip->SetFrame(c->arg().request.frame_number, frame);
+	m_cache->insert(c->arg().request.clip_id, c->arg().request.frame_number, frame);
 	AVS_EX_END
 
 	return 0;
