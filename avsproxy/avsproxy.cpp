@@ -305,13 +305,8 @@ ipc::VideoFrame local_to_heap_frame(ipc_client::IPCClient *client, uint32_t clip
 
 
 class AVSProxy : public vsxx::FilterBase {
-	struct clip_info {
-		FilterNode node;
-		std::deque<int32_t> requested;
-	};
-
 	std::unique_ptr<ipc_client::IPCClient> m_client;
-	std::unordered_map<uint32_t, clip_info> m_clips;
+	std::unordered_map<uint32_t, FilterNode> m_clips;
 	ipc::Value m_script_result;
 	::VSVideoInfo m_vi;
 
@@ -409,13 +404,13 @@ class AVSProxy : public vsxx::FilterBase {
 		ConstVideoFrame frame;
 
 		try {
-			frame = it->second.node.get_frame(c->arg().frame_number);
+			frame = it->second.get_frame(c->arg().frame_number);
 		} catch (...) {
 			send_err(c->transaction_id());
 			return;
 		}
 
-		ipc::VideoFrame ipc_frame = local_to_heap_frame(m_client.get(), c->arg().clip_id, c->arg().frame_number, it->second.node.video_info(), frame);
+		ipc::VideoFrame ipc_frame = local_to_heap_frame(m_client.get(), c->arg().clip_id, c->arg().frame_number, it->second.video_info(), frame);
 		std::unique_ptr<ipc_client::Command> response = std::make_unique<ipc_client::CommandSetFrame>(ipc_frame);
 		response->set_response_id(c->transaction_id());
 		m_client->send_async(std::move(response));
@@ -529,7 +524,7 @@ public:
 				response = m_client->send_sync(std::make_unique<ipc_client::CommandSetScriptVar>(name, value));
 				throw_on_error(response.get());
 
-				m_clips[static_cast<int>(i)].node = std::move(node);
+				m_clips[static_cast<int>(i)] = std::move(node);
 			}
 		}
 
