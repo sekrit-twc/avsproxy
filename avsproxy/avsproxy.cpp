@@ -341,30 +341,29 @@ class AVSProxy : public vsxx::FilterBase {
 
 	void recv_callback(std::unique_ptr<ipc_client::Command> c)
 	{
-		if (!c) {
-			m_remote_exit = true;
-			m_cond.notify_all();
-			return;
-		}
+		std::unique_lock<std::mutex> lock{ m_mutex };
 
-		{
-			std::lock_guard<std::mutex> lock{ m_mutex };
+		if (c)
 			m_command_queue.emplace_back(std::move(c));
-		}
+		else
+			m_remote_exit = true;
+
+		lock.unlock();
 		m_cond.notify_all();
-		return;
 	}
 
 	void getframe_callback(uint32_t request, std::unique_ptr<ipc_client::Command> c)
 	{
-		if (m_active_request == request) {
-			m_getframe_response_received = true;
-			m_getframe_response = std::move(c);
+		std::unique_lock<std::mutex> lock{ m_mutex };
 
-			m_cond.notify_all();
-		} else {
+		if (request == m_active_request)
+			m_getframe_response = std::move(c);
+		else
 			send_err(c->transaction_id());
-		}
+
+		m_getframe_response_received = true;
+		lock.unlock();
+		m_cond.notify_all();
 	}
 
 	void send_ack(uint32_t response_id)
@@ -435,10 +434,9 @@ class AVSProxy : public vsxx::FilterBase {
 			std::make_unique<ipc_client::CommandGetFrame>(ipc::VideoFrameRequest{ m_script_result.c.clip_id, n }),
 			std::bind(&AVSProxy::getframe_callback, this, ++m_active_request, std::placeholders::_1));
 
-		std::unique_lock<std::mutex> lock{ m_mutex };
-
 		while (true) {
-			m_cond.wait(lock);
+			std::unique_lock<std::mutex> lock{ m_mutex };
+			m_cond.wait(lock, [&]() { return m_remote_exit || m_getframe_response_received || !m_command_queue.empty(); });
 
 			if (m_remote_exit)
 				throw std::runtime_error{ "remote process exited" };
@@ -447,8 +445,12 @@ class AVSProxy : public vsxx::FilterBase {
 				break;
 
 			while (!m_command_queue.empty()) {
+				if (!lock)
+					lock.lock();
+
 				std::unique_ptr<ipc_client::Command> c{ std::move(m_command_queue.front()) };
 				m_command_queue.pop_front();
+				lock.unlock();
 
 				if (c->type() != ipc_client::CommandType::GET_FRAME) {
 					send_err(c->transaction_id());
@@ -460,7 +462,6 @@ class AVSProxy : public vsxx::FilterBase {
 			}
 		}
 
-		lock.unlock();
 		reject_commands();
 
 		if (m_getframe_response)

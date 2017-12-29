@@ -60,12 +60,14 @@ class Session : ipc_client::CommandObserver {
 
 	void queue_command(std::unique_ptr<ipc_client::Command> command)
 	{
-		if (command) {
-			std::lock_guard<std::mutex> lock{ m_mutex };
+		std::unique_lock<std::mutex> lock{ m_mutex };
+
+		if (command)
 			m_queue.emplace_back(std::move(command));
-		} else {
+		else
 			m_exit_flag = true;
-		}
+
+		lock.unlock();
 		m_cond.notify_all();
 	}
 
@@ -106,24 +108,17 @@ public:
 		m_client->start(std::bind(&Session::queue_command, this, std::placeholders::_1));
 
 		while (true) {
+			std::unique_lock<std::mutex> lock{ m_mutex };
+			m_cond.wait(lock, [&]() { return m_exit_flag || !m_queue.empty(); });
+
 			if (m_exit_flag) {
 				ipc_log0("exit after broken connection\n");
 				break;
 			}
 
-			std::unique_ptr<ipc_client::Command> command;
-
-			{
-				if (m_queue.empty()) {
-					std::unique_lock<std::mutex> lock{ m_mutex };
-					m_cond.wait(lock);
-				}
-				if (m_queue.empty())
-					continue;
-
-				command = std::move(m_queue.front());
-				m_queue.pop_front();
-			}
+			std::unique_ptr<ipc_client::Command> command = std::move(m_queue.front());
+			m_queue.pop_front();
+			lock.unlock();
 
 			uint32_t transaction_id = command->transaction_id();
 
