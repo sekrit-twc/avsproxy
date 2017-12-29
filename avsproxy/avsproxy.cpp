@@ -469,9 +469,11 @@ class AVSProxy : public vsxx::FilterBase {
 
 		throw_on_error(m_getframe_response.get(), ipc_client::CommandType::SET_FRAME);
 
-		return std::unique_ptr<ipc_client::CommandSetFrame>{
-			static_cast<ipc_client::CommandSetFrame *>(m_getframe_response.release())
-		};
+		std::unique_ptr<ipc_client::CommandSetFrame> ret{ static_cast<ipc_client::CommandSetFrame *>(m_getframe_response.release()) };
+		if (ret->arg().request.clip_id != m_script_result.c.clip_id || ret->arg().request.frame_number != n)
+			throw std::runtime_error{ "remote returned incorrect frame" };
+
+		return ret;
 	}
 public:
 	explicit AVSProxy(void *) :
