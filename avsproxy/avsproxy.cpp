@@ -349,16 +349,42 @@ class AVSProxy : public vsxx::FilterBase {
 
 	void getframe_callback(uint32_t request, std::unique_ptr<ipc_client::Command> c)
 	{
+		if (request != m_active_request) {
+			dispose_err(std::move(c));
+			return;
+		}
+
 		std::unique_lock<std::mutex> lock{ m_mutex };
 
-		if (request == m_active_request)
-			m_getframe_response = std::move(c);
-		else
-			send_err(c->transaction_id());
-
+		m_getframe_response = std::move(c);
 		m_getframe_response_received = true;
+
 		lock.unlock();
 		m_cond.notify_all();
+	}
+
+	void dispose_err(std::unique_ptr<ipc_client::Command> c)
+	{
+		switch (c->type()) {
+		case ipc_client::CommandType::EVAL_SCRIPT:
+			m_client->deallocate(
+				m_client->offset_to_pointer(static_cast<ipc_client::CommandEvalScript *>(c.get())->arg()));
+			break;
+		case ipc_client::CommandType::SET_SCRIPT_VAR:
+			if (static_cast<ipc_client::CommandSetScriptVar *>(c.get())->value().type == ipc::Value::STRING) {
+				m_client->deallocate(
+					m_client->offset_to_pointer(static_cast<ipc_client::CommandSetScriptVar *>(c.get())->value().s));
+			}
+			break;
+		case ipc_client::CommandType::SET_FRAME:
+			m_client->deallocate(
+				m_client->offset_to_pointer(static_cast<ipc_client::CommandSetFrame *>(c.get())->arg().heap_offset));
+			break;
+		default:
+			break;
+		}
+
+		send_err(c->transaction_id());
 	}
 
 	void send_ack(uint32_t response_id)
@@ -389,7 +415,7 @@ class AVSProxy : public vsxx::FilterBase {
 		while (!m_command_queue.empty()) {
 			std::unique_ptr<ipc_client::Command> c{ std::move(m_command_queue.front()) };
 			m_command_queue.pop_front();
-			send_err(c->transaction_id());
+			dispose_err(std::move(c));
 		}
 	}
 
@@ -445,7 +471,7 @@ class AVSProxy : public vsxx::FilterBase {
 				lock.unlock();
 
 				if (c->type() != ipc_client::CommandType::GET_FRAME) {
-					send_err(c->transaction_id());
+					dispose_err(std::move(c));
 					lock.lock();
 					continue;
 				}
