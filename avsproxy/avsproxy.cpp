@@ -440,20 +440,19 @@ class AVSProxy : public vsxx::FilterBase {
 				break;
 
 			while (!m_command_queue.empty()) {
-				if (!lock)
-					lock.lock();
-
 				std::unique_ptr<ipc_client::Command> c{ std::move(m_command_queue.front()) };
 				m_command_queue.pop_front();
 				lock.unlock();
 
 				if (c->type() != ipc_client::CommandType::GET_FRAME) {
 					send_err(c->transaction_id());
+					lock.lock();
 					continue;
 				}
 
 				std::unique_ptr<ipc_client::CommandGetFrame> get{ static_cast<ipc_client::CommandGetFrame *>(c.release()) };
 				service_remote_getframe(std::move(get));
+				lock.lock();
 			}
 		}
 
