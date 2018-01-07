@@ -42,8 +42,10 @@ class Session : ipc_client::CommandObserver {
 		if (s_log_file)
 			return 0;
 
-		if ((s_log_file = _wfopen(c->arg().c_str(), L"w")))
+		if ((s_log_file = _wfopen(c->arg().c_str(), L"w"))) {
+			std::setvbuf(s_log_file, nullptr, _IONBF, 0);
 			ipc_set_log_handler(log_to_file, log_to_file);
+		}
 
 		return 0;
 	}
