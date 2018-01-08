@@ -294,7 +294,7 @@ ipc::VideoFrame local_to_heap_frame(ipc_client::IPCClient *client, uint32_t clip
 				rowsize *= 2;
 
 			vs_bitblt(dst_ptr, ipc_frame.stride[p], frame.read_ptr(p), frame.stride(p), rowsize, frame.height(p));
-			dst_ptr += rowsize * frame.height(p);
+			dst_ptr += ipc_frame.stride[p] * frame.height(p);
 		}
 	}
 
