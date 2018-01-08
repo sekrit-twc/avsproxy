@@ -245,6 +245,7 @@ IPCClient::~IPCClient()
 
 	if (m_master) {
 		ipc_log("terminate slave process\n");
+		::Sleep(100);
 		::TerminateProcess(m_remote_process, 0);
 		::CloseHandle(m_remote_process);
 	}
