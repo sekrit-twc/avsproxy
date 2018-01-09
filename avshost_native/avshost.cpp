@@ -9,7 +9,13 @@
 #include "ipc/ipc_client.h"
 #include "ipc/logging.h"
 #include "ipc/video_types.h"
-#include "avisynth.h"
+
+#ifdef AVISYNTH_PLUS
+  #include <avisynth.h>
+#else
+  #include "avisynth_2.6.h"
+#endif
+
 #include "avshost.h"
 
 const AVS_Linkage *AVS_linkage;

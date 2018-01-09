@@ -15,10 +15,10 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\avshost_native\avisynth.h">
+    <ClInclude Include="..\..\avshost_native\avshost.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\avshost_native\avshost.h">
+    <ClInclude Include="..\..\avshost_native\avisynth_2.6.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
