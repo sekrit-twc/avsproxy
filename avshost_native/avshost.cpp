@@ -19,10 +19,18 @@
 #include "avshost.h"
 
 const AVS_Linkage *AVS_linkage;
+bool g_avisynth_plus;
 
 namespace avs {
 
 namespace {
+
+bool is_avisynth_plus()
+{
+	::VideoInfo vi{};
+	vi.pixel_type = -536805376; // CS_Y16
+	return vi.BitsPerPixel() == 16;
+}
 
 char *save_string(::IScriptEnvironment *env, const std::string &s)
 {
@@ -383,6 +391,7 @@ int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandLoadAvisynth> c)
 		AVS_EX_BEGIN
 		m_env.reset(m_create_script_env(AVISYNTH_INTERFACE_VERSION));
 		AVS_linkage = m_env->GetAVSLinkage();
+		g_avisynth_plus = is_avisynth_plus();
 		AVS_EX_END
 
 		if (!m_env)
@@ -416,6 +425,7 @@ int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandNewScriptEnv> c)
 
 	m_env = std::move(env);
 	AVS_linkage = m_env->GetAVSLinkage();
+	g_avisynth_plus = is_avisynth_plus();
 	m_cache = std::make_unique<Cache>();
 	AVS_EX_END
 
@@ -447,6 +457,8 @@ int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandSetScriptVar> c)
 	ipc_log("set script var '%s'\n", c->name().c_str());
 
 	AVS_EX_BEGIN
+	auto set_var_func = g_avisynth_plus ? &IScriptEnvironment::SetGlobalVar : &IScriptEnvironment::SetVar;
+
 	switch (c->value().type) {
 	case ipc::Value::CLIP:
 	{
@@ -456,21 +468,21 @@ int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandSetScriptVar> c)
 		        c->value().c.clip_id, vi.width, vi.height, vi.color_family, vi.subsample_w, vi.subsample_h);
 
 		PClip clip = new VirtualClip{ m_client, m_cache.get(), c->value().c.clip_id, deserialize_video_info(vi) };
-		m_env->SetVar(c->name().c_str(), clip);
+		(m_env.get()->*set_var_func)(c->name().c_str(), clip);
 		m_remote_clips[c->value().c.clip_id] = clip;
 		break;
 	}
 	case ipc::Value::BOOL_:
-		m_env->SetVar(c->name().c_str(), c->value().b);
+		(m_env.get()->*set_var_func)(c->name().c_str(), c->value().b);
 		break;
 	case ipc::Value::INT:
-		m_env->SetVar(c->name().c_str(), static_cast<int>(c->value().i));
+		(m_env.get()->*set_var_func)(c->name().c_str(), static_cast<int>(c->value().i));
 		break;
 	case ipc::Value::FLOAT:
-		m_env->SetVar(c->name().c_str(), static_cast<float>(c->value().f));
+		(m_env.get()->*set_var_func)(c->name().c_str(), static_cast<float>(c->value().f));
 		break;
 	case ipc::Value::STRING:
-		m_env->SetVar(save_string(m_env.get(), c->name()), heap_to_local_str(m_client, c->value().s).c_str());
+		(m_env.get()->*set_var_func)(save_string(m_env.get(), c->name()), heap_to_local_str(m_client, c->value().s).c_str());
 		break;
 	default:
 		throw AvisynthError_{ "unsupported variable type" };
