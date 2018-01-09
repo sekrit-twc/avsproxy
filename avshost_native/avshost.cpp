@@ -24,6 +24,11 @@ namespace avs {
 
 namespace {
 
+char *save_string(::IScriptEnvironment *env, const std::string &s)
+{
+	return env->SaveString(s.c_str(), static_cast<int>(s.size()));
+}
+
 std::string heap_to_local_str(ipc_client::IPCClient *client, uint32_t offset)
 {
 	void *ptr = client->offset_to_pointer(offset);
@@ -465,7 +470,7 @@ int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandSetScriptVar> c)
 		m_env->SetVar(c->name().c_str(), static_cast<float>(c->value().f));
 		break;
 	case ipc::Value::STRING:
-		m_env->SetVar(c->name().c_str(), heap_to_local_str(m_client, c->value().s).c_str());
+		m_env->SetVar(save_string(m_env.get(), c->name()), heap_to_local_str(m_client, c->value().s).c_str());
 		break;
 	default:
 		throw AvisynthError_{ "unsupported variable type" };
@@ -487,7 +492,7 @@ int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandEvalScript> c)
 	(ipc_log)("%s", script.c_str());
 	ipc_log0("end eval script\n");
 
-	::AVSValue result = m_env->Invoke("Eval", script.c_str());
+	::AVSValue result = m_env->Invoke("Eval", save_string(m_env.get(), script));
 	send_avsvalue(c->transaction_id(), result);
 	AVS_EX_END
 
