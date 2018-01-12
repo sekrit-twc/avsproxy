@@ -618,7 +618,7 @@ public:
 
 const PluginInfo g_plugin_info{
 	PLUGIN_ID, "avsw", "avsproxy", {
-		{ &vsxx::FilterBase::filter_create<AVSProxy>, "eval",
+		{ &vsxx::FilterBase::filter_create<AVSProxy>, "Eval",
 			"script:data;"
 			"clips:clip[]:opt;"
 			"clip_names:data[]:opt;"
