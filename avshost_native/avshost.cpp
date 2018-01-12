@@ -457,8 +457,6 @@ int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandSetScriptVar> c)
 	ipc_log("set script var '%s'\n", c->name().c_str());
 
 	AVS_EX_BEGIN
-	auto set_var_func = g_avisynth_plus ? &IScriptEnvironment::SetGlobalVar : &IScriptEnvironment::SetVar;
-
 	switch (c->value().type) {
 	case ipc::Value::CLIP:
 	{
@@ -468,21 +466,21 @@ int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandSetScriptVar> c)
 		        c->value().c.clip_id, vi.width, vi.height, vi.color_family, vi.subsample_w, vi.subsample_h);
 
 		PClip clip = new VirtualClip{ m_client, m_cache.get(), c->value().c.clip_id, deserialize_video_info(vi) };
-		(m_env.get()->*set_var_func)(c->name().c_str(), clip);
+		m_env->SetVar(save_string(m_env.get(), c->name().c_str()), clip);
 		m_remote_clips[c->value().c.clip_id] = clip;
 		break;
 	}
 	case ipc::Value::BOOL_:
-		(m_env.get()->*set_var_func)(c->name().c_str(), c->value().b);
+		m_env->SetVar(save_string(m_env.get(), c->name().c_str()), c->value().b);
 		break;
 	case ipc::Value::INT:
-		(m_env.get()->*set_var_func)(c->name().c_str(), static_cast<int>(c->value().i));
+		m_env->SetVar(save_string(m_env.get(), c->name().c_str()), static_cast<int>(c->value().i));
 		break;
 	case ipc::Value::FLOAT:
-		(m_env.get()->*set_var_func)(c->name().c_str(), static_cast<float>(c->value().f));
+		m_env->SetVar(save_string(m_env.get(), c->name().c_str()), static_cast<float>(c->value().f));
 		break;
 	case ipc::Value::STRING:
-		(m_env.get()->*set_var_func)(save_string(m_env.get(), c->name()), heap_to_local_str(m_client, c->value().s).c_str());
+		m_env->SetVar(save_string(m_env.get(), c->name()), heap_to_local_str(m_client, c->value().s).c_str());
 		break;
 	default:
 		throw AvisynthError_{ "unsupported variable type" };
