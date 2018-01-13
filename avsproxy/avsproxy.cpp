@@ -311,11 +311,11 @@ class AVSProxy : public vsxx::FilterBase {
 	::VSVideoInfo m_vi;
 
 	std::deque<std::unique_ptr<ipc_client::Command>> m_command_queue;
-	std::unique_ptr<ipc_client::Command> m_getframe_response;
+	std::unique_ptr<ipc_client::Command> m_runloop_response;
 	std::mutex m_mutex;
 	std::condition_variable m_cond;
 	std::atomic_uint32_t m_active_request;
-	std::atomic_bool m_getframe_response_received;
+	std::atomic_bool m_runloop_response_received;
 	std::atomic_bool m_remote_exit;
 
 	void fatal()
@@ -347,7 +347,7 @@ class AVSProxy : public vsxx::FilterBase {
 		m_cond.notify_all();
 	}
 
-	void getframe_callback(uint32_t request, std::unique_ptr<ipc_client::Command> c)
+	void runloop_callback(uint32_t request, std::unique_ptr<ipc_client::Command> c)
 	{
 		if (request != m_active_request) {
 			dispose_err(std::move(c));
@@ -356,8 +356,8 @@ class AVSProxy : public vsxx::FilterBase {
 
 		std::unique_lock<std::mutex> lock{ m_mutex };
 
-		m_getframe_response = std::move(c);
-		m_getframe_response_received = true;
+		m_runloop_response = std::move(c);
+		m_runloop_response_received = true;
 
 		lock.unlock();
 		m_cond.notify_all();
@@ -409,7 +409,8 @@ class AVSProxy : public vsxx::FilterBase {
 
 	void reject_commands()
 	{
-		std::lock_guard<std::mutex> lock{ m_mutex };
+		// Caller must acquire mutex.
+		assert(!m_mutex.try_lock());
 
 		// Reject any slave activity from a previous frame.
 		while (!m_command_queue.empty()) {
@@ -442,27 +443,25 @@ class AVSProxy : public vsxx::FilterBase {
 		m_client->send_async(std::move(response));
 	}
 
-	std::unique_ptr<ipc_client::CommandSetFrame> get_frame_runloop(int n)
+	std::unique_ptr<ipc_client::Command> runloop(std::unique_ptr<ipc_client::Command> c)
 	{
 		if (m_remote_exit)
 			throw std::runtime_error{ "remote process exited" };
 
+		std::unique_lock<std::mutex> lock{ m_mutex };
 		reject_commands();
 
-		m_getframe_response.reset();
-		m_getframe_response_received = false;
-		m_client->send_async(
-			std::make_unique<ipc_client::CommandGetFrame>(ipc::VideoFrameRequest{ m_script_result.c.clip_id, n }),
-			std::bind(&AVSProxy::getframe_callback, this, ++m_active_request, std::placeholders::_1));
+		m_runloop_response.reset();
+		m_runloop_response_received = false;
+		m_client->send_async(std::move(c), std::bind(&AVSProxy::runloop_callback, this, ++m_active_request, std::placeholders::_1));
 
 		while (true) {
-			std::unique_lock<std::mutex> lock{ m_mutex };
-			m_cond.wait(lock, [&]() { return m_remote_exit || m_getframe_response_received || !m_command_queue.empty(); });
+			m_cond.wait(lock, [&]() { return m_remote_exit || m_runloop_response_received || !m_command_queue.empty(); });
 
 			if (m_remote_exit)
 				throw std::runtime_error{ "remote process exited" };
 
-			if (m_getframe_response_received)
+			if (m_runloop_response_received)
 				break;
 
 			while (!m_command_queue.empty()) {
@@ -483,24 +482,17 @@ class AVSProxy : public vsxx::FilterBase {
 		}
 
 		reject_commands();
+		if (m_runloop_response)
+			send_ack(m_runloop_response->transaction_id());
 
-		if (m_getframe_response)
-			send_ack(m_getframe_response->transaction_id());
-
-		throw_on_error(m_getframe_response.get(), ipc_client::CommandType::SET_FRAME);
-
-		std::unique_ptr<ipc_client::CommandSetFrame> ret{ static_cast<ipc_client::CommandSetFrame *>(m_getframe_response.release()) };
-		if (ret->arg().request.clip_id != m_script_result.c.clip_id || ret->arg().request.frame_number != n)
-			throw std::runtime_error{ "remote returned incorrect frame" };
-
-		return ret;
+		return std::move(m_runloop_response);
 	}
 public:
 	explicit AVSProxy(void *) :
 		m_script_result{},
 		m_vi{},
 		m_active_request{},
-		m_getframe_response_received{},
+		m_runloop_response_received{},
 		m_remote_exit {}
 	{}
 
@@ -554,7 +546,7 @@ public:
 		}
 
 		uint32_t heap_script = local_to_heap_str(m_client.get(), script.c_str(), script.size());
-		response = m_client->send_sync(std::make_unique<ipc_client::CommandEvalScript>(heap_script));
+		response = runloop(std::make_unique<ipc_client::CommandEvalScript>(heap_script));
 		throw_on_error(response.get(), ipc_client::CommandType::SET_SCRIPT_VAR);
 
 		m_script_result = static_cast<ipc_client::CommandSetScriptVar *>(response.get())->value();
@@ -602,8 +594,12 @@ public:
 	ConstVideoFrame get_frame_initial(int n, const VapourCore &core, ::VSFrameContext *) override
 	{
 		try {
-			std::unique_ptr<ipc_client::CommandSetFrame> response = get_frame_runloop(n);
-			return heap_to_local_frame(m_client.get(), m_vi, m_script_result.c.vi.color_family, response->arg(), core);
+			std::unique_ptr<ipc_client::Command> response = runloop(
+				std::make_unique<ipc_client::CommandGetFrame>(ipc::VideoFrameRequest{ m_script_result.c.clip_id, n }));
+			throw_on_error(response.get(), ipc_client::CommandType::SET_FRAME);
+
+			ipc_client::CommandSetFrame *set_frame = static_cast<ipc_client::CommandSetFrame *>(response.get());
+			return heap_to_local_frame(m_client.get(), m_vi, m_script_result.c.vi.color_family, set_frame->arg(), core);
 		} catch (const ipc_client::IPCError &) {
 			fatal();
 			throw;
