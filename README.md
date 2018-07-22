@@ -8,7 +8,7 @@ Embed 32-bit Avisynth 2.6 or Avisynth+ environment within 64-bit VapourSynth.
  * **clips** - VapourSynth clips ("nodes") to inject into Avisynth environment
  * **clip_names** - Avisynth variable name corresponding to injected clip
  * **avisynth** - Path to Avisynth DLL. The default uses the process DLL search path.
- * **slave** - Path to avshost_native.exe slave procecss. The plugin path is searched by default.
+ * **slave** - Path to avshost_native.exe slave process. The plugin path is searched by default.
  * **slave_log** - Log file for slave process.
  
 The function returns the result of the Avisynth script, which may be an integer, float, string, or clip. If the result is a clip, the name of the return value is "clip", otherwise it is "result".
