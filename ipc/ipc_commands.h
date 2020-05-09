@@ -18,6 +18,7 @@ namespace ipc_client {
 
 class IPCError;
 
+std::unique_ptr<Command> deserialize_command(const ipc::Command* command);
 
 constexpr uint32_t INVALID_TRANSACTION = ~static_cast<uint32_t>(0);
 
