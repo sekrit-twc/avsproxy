@@ -415,8 +415,8 @@ int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandNewScriptEnv> c)
 	ipc_log0("new script env\n");
 
 	AVS_EX_BEGIN
-	std::unique_ptr<::IScriptEnvironment, IScriptEnvironmentDeleter> env{ m_create_script_env(AVISYNTH_INTERFACE_VERSION) };
-	if (!m_env)
+	std::unique_ptr<::IScriptEnvironment, IScriptEnvironmentDeleter> env{ m_create_script_env(6) };
+	if (!env)
 		throw AvisynthError_{ "avisynth library has incompatible interface version" };
 
 	m_local_clips.clear();
