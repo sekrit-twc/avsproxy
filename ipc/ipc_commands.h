@@ -54,6 +54,8 @@ public:
 	friend std::unique_ptr<Command> deserialize_command(const ipc::Command *command);
 };
 
+std::unique_ptr<Command> deserialize_command(const ipc::Command *command);
+
 
 namespace detail {
 
