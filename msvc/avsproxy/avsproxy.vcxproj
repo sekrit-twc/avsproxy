@@ -80,7 +80,7 @@
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_SCL_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>ipc64.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>p2p_simd.lib;ipc64.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(OutDir)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
@@ -94,7 +94,7 @@
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_SCL_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>ipc64.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>p2p_simd.lib;ipc64.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(OutDir)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
@@ -112,7 +112,7 @@
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>ipc64.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>p2p_simd.lib;ipc64.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(OutDir)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
@@ -130,19 +130,15 @@
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>ipc64.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>p2p_simd.lib;ipc64.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(OutDir)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\..\avsproxy\avsproxy.cpp" />
-    <ClCompile Include="..\..\libp2p\p2p_api.cpp" />
-    <ClCompile Include="..\..\libp2p\v210.cpp" />
     <ClCompile Include="..\..\vsxx\vsxx_pluginmain.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\libp2p\p2p.h" />
-    <ClInclude Include="..\..\libp2p\p2p_api.h" />
     <ClInclude Include="..\..\vsxx\VapourSynth++.hpp" />
     <ClInclude Include="..\..\vsxx\VapourSynth.h" />
     <ClInclude Include="..\..\vsxx\VSHelper.h" />
