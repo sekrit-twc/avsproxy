@@ -107,7 +107,7 @@ public:
 	static slave_tag slave() { return{}; }
 
 	// Allocate IPC context and start child process.
-	explicit IPCClient(master_tag, const wchar_t *slave_path);
+	IPCClient(master_tag, const wchar_t *slave_path);
 
 	// Connect to master process.
 	IPCClient(slave_tag, win32::detail::HANDLE master_process, win32::detail::HANDLE shmem_handle, size_t shmem_size);

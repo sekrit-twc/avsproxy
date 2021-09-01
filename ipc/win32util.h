@@ -16,8 +16,8 @@ typedef unsigned long DWORD;
 typedef void *HANDLE;
 typedef HINSTANCE__ *HMODULE;
 
-static constexpr DWORD INFINITE_ = ~static_cast<DWORD>(0);
-static constexpr uintptr_t INVALID_HANDLE_VALUE_ = ~static_cast<uintptr_t>(0);
+constexpr DWORD INFINITE_ = ~static_cast<DWORD>(0);
+constexpr uintptr_t INVALID_HANDLE_VALUE_ = ~static_cast<uintptr_t>(0);
 
 inline HANDLE invalid_handle() { return reinterpret_cast<HANDLE>(INVALID_HANDLE_VALUE_); }
 

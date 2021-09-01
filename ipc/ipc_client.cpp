@@ -68,6 +68,7 @@ void print_heap(const ipc::Heap *heap)
 {
 	const ipc::HeapNode *base = ipc::offset_to_pointer<const ipc::HeapNode>(heap, heap->buffer_offset);
 	const ipc::HeapNode *node = base;
+
 	while (true) {
 		ipc_log("0x%08x - 0x%08x (%u): %s\n",
 			ipc::pointer_to_offset(base, node),
@@ -87,6 +88,7 @@ IPCClient::IPCClient(bool master) :
 	m_master_queue{},
 	m_slave_queue{},
 	m_heap{},
+	m_remote_process{},
 	m_master{ master },
 	m_transaction_id{},
 	m_kill_flag{}

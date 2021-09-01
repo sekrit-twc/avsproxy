@@ -13,7 +13,7 @@ template <class T>
 size_t LEN_MAX = (UINT32_MAX - sizeof(uint32_t) - sizeof(T)) / sizeof(T);
 
 template <class T>
-size_t deserialize(T *dst, const void *src, size_t buf_size)
+size_t deserialize_chars(T *dst, const void *src, size_t buf_size)
 {
 	if (buf_size < sizeof(uint32_t) + sizeof(T))
 		return LEN_UNKNOWN;
@@ -34,7 +34,7 @@ size_t deserialize(T *dst, const void *src, size_t buf_size)
 }
 
 template <class T>
-size_t serialize(void *dst, const T *src, size_t len)
+size_t serialize_chars(void *dst, const T *src, size_t len)
 {
 	if (len == LEN_UNKNOWN)
 		len = std::char_traits<T>::length(src);
@@ -59,22 +59,22 @@ size_t serialize(void *dst, const T *src, size_t len)
 
 size_t deserialize_str(char *dst, const void *src, size_t buf_size)
 {
-	return deserialize(dst, src, buf_size);
+	return deserialize_chars(dst, src, buf_size);
 }
 
 size_t serialize_str(void *dst, const char *src, size_t len)
 {
-	return serialize(dst, src, len);
+	return serialize_chars(dst, src, len);
 }
 
 size_t deserialize_wstr(wchar_t *dst, const void *src, size_t buf_size)
 {
-	return deserialize(dst, src, buf_size);
+	return deserialize_chars(dst, src, buf_size);
 }
 
 size_t serialize_wstr(void *dst, const wchar_t *src, size_t len)
 {
-	return serialize(dst, src, len);
+	return serialize_chars(dst, src, len);
 }
 
 } // namespace ipc

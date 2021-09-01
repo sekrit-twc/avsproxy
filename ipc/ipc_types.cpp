@@ -14,7 +14,7 @@ void split_heap_node(void *heap_base, HeapNode *node, uint32_t size)
 	uint32_t alloc_size = size;
 
 	if (alloc_size % alignof(HeapNode))
-		alloc_size += alignof(HeapNode)-alloc_size % alignof(HeapNode);
+		alloc_size += alignof(HeapNode) - alloc_size % alignof(HeapNode);
 
 	HeapNode *next = new (offset_to_pointer<void>(heap_base, node_offset + alloc_size)) HeapNode{};
 	next->prev_node_offset = node_offset;
