@@ -266,8 +266,11 @@ uint32_t IPCClient::next_transaction_id()
 
 void IPCClient::recv_thread_func()
 {
+	std::exception_ptr eptr;
+
 	try {
 		std::vector<unsigned char> command_buf;
+		command_buf.reserve(QUEUE_SIZE);
 
 		while (true) {
 			if (m_kill_flag) {
@@ -300,7 +303,7 @@ void IPCClient::recv_thread_func()
 				pos += raw_command->size;
 
 				if (!command) {
-					ipc_log0("failed to deserialize command type\n");
+					ipc_log0("failed to deserialize command\n");
 					continue;
 				}
 
@@ -321,18 +324,23 @@ void IPCClient::recv_thread_func()
 					callback(std::move(command));
 				} else if (m_default_cb) {
 					m_default_cb(std::move(command));
+				} else {
+					command = nullptr;
 				}
 			}
 		}
 	} catch (...) {
 		ipc_log0("exit receiver thread after exception\n");
-		m_recv_exception = std::current_exception();
+		eptr = std::current_exception();
 	}
 
+	// Record exception information and wake all waiters.
 	std::lock_guard<std::mutex> lock{ m_worker_mutex };
+	m_recv_exception = eptr;
 
-	for (const auto &cb : m_callbacks) {
-		cb.second(nullptr);
+	for (auto it = m_callbacks.begin(); it != m_callbacks.end(); ++it) {
+		it->second(nullptr);
+		m_callbacks.erase(it);
 	}
 	if (m_default_cb)
 		m_default_cb(nullptr);
@@ -438,26 +446,17 @@ void IPCClient::send_async(std::unique_ptr<Command> command, callback_type cb)
 {
 	uint32_t transaction_id = INVALID_TRANSACTION;
 
+	if (m_kill_flag) {
+		stop();
+		return;
+	}
+
 	if (cb) {
 		transaction_id = next_transaction_id();
 		command->set_transaction_id(transaction_id);
-	}
 
-	{
 		std::lock_guard<std::mutex> lock{ m_worker_mutex };
-
-		if (m_recv_exception) {
-			stop(); // Will throw.
-			return; // Not reached.
-		}
-		if (m_kill_flag) {
-			if (cb)
-				cb(nullptr);
-			return;
-		}
-
-		if (cb)
-			m_callbacks[transaction_id] = std::move(cb);
+		m_callbacks[transaction_id] = std::move(cb);
 	}
 
 	std::vector<unsigned char> data(command->serialized_size());

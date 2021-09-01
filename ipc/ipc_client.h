@@ -56,6 +56,9 @@ public:
 
 class IPCClient {
 public:
+	// Called from the receiver thread. Throwing exceptions will terminate the
+	// session. The parameter will be null if the response could not be
+	// deserialized or the session ended.
 	typedef std::function<void(std::unique_ptr<Command>)> callback_type;
 private:
 	struct master_tag {};
@@ -106,7 +109,7 @@ public:
 	static master_tag master() { return{}; }
 	static slave_tag slave() { return{}; }
 
-	// Allocate IPC context and start child process.
+	// Allocate IPC context and start slave process.
 	IPCClient(master_tag, const wchar_t *slave_path);
 
 	// Connect to master process.
