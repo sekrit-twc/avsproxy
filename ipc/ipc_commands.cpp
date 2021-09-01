@@ -24,32 +24,39 @@ void throw_deserialization_error(const char *msg)
 	throw IPCError{ msg };
 }
 
-} // namespace detail
 
-
-void Command::deserialize_common(const ipc::Command *command)
+template <CommandType Type>
+std::unique_ptr<Command_Args1_str<Type>> Command_Args1_str<Type>::deserialize_internal(const void *buf, size_t size)
 {
-	m_transaction_id = command->transaction_id;
-	m_response_id = command->response_id;
+	size_t len = ipc::deserialize_str(nullptr, buf, size);
+	if (len == ~static_cast<size_t>(0))
+		throw_deserialization_error("buffer overrun");
+
+	std::string str(len, '\0');
+	ipc::deserialize_str(&str[0], buf, size);
+	return std::make_unique<Command_Args1_str>(str);
 }
 
-size_t Command::serialized_size() const
+
+template <CommandType Type>
+std::unique_ptr<Command_Args1_wstr<Type>> Command_Args1_wstr<Type>::deserialize_internal(const void *buf, size_t size)
 {
-	size_t size = sizeof(ipc::Command) + size_internal();
-	assert(size <= UINT32_MAX);
-	return size;
+	size_t len = ipc::deserialize_wstr(nullptr, buf, size);
+	if (len == ~static_cast<size_t>(0))
+		throw_deserialization_error("buffer overrun");
+
+	std::wstring str(len, '\0');
+	ipc::deserialize_wstr(&str[0], buf, size);
+	return std::make_unique<Command_Args1_wstr>(str);
 }
 
-void Command::serialize(void *buf) const
-{
-	ipc::Command *command = new (buf) ipc::Command{};
-	command->size = static_cast<uint32_t>(serialized_size());
-	command->transaction_id = transaction_id();
-	command->response_id = response_id();
-	command->type = static_cast<int32_t>(type());
 
-	void *payload = ipc::offset_to_pointer<void>(command, sizeof(ipc::Command));
-	serialize_internal(payload);
+template <CommandType Type, class T>
+std::unique_ptr<Command_Args1_pod<Type, T>> Command_Args1_pod<Type, T>::deserialize_internal(const void *buf, size_t size)
+{
+	if (size < sizeof(T))
+		throw_deserialization_error("buffer overrun");
+	return std::make_unique<Command_Args1_pod>(*static_cast<const T *>(buf));
 }
 
 
@@ -92,6 +99,35 @@ void CommandSetScriptVar::serialize_internal(void *buf) const
 		size += alignof(ipc::Value) - size % alignof(ipc::Value);
 	*reinterpret_cast<ipc::Value *>(static_cast<unsigned char *>(buf) + size) = m_value;
 }
+
+} // namespace detail
+
+
+void Command::deserialize_common(const ipc::Command *command)
+{
+	m_transaction_id = command->transaction_id;
+	m_response_id = command->response_id;
+}
+
+size_t Command::serialized_size() const
+{
+	size_t size = sizeof(ipc::Command) + size_internal();
+	assert(size <= UINT32_MAX);
+	return size;
+}
+
+void Command::serialize(void *buf) const
+{
+	ipc::Command *command = new (buf) ipc::Command{};
+	command->size = static_cast<uint32_t>(serialized_size());
+	command->transaction_id = transaction_id();
+	command->response_id = response_id();
+	command->type = static_cast<int32_t>(type());
+
+	void *payload = ipc::offset_to_pointer<void>(command, sizeof(ipc::Command));
+	serialize_internal(payload);
+}
+
 
 std::unique_ptr<Command> deserialize_command(const ipc::Command *command)
 {

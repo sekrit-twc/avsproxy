@@ -16,12 +16,23 @@ struct Command;
 
 namespace ipc_client {
 
-class IPCError;
-
-
 constexpr uint32_t INVALID_TRANSACTION = ~static_cast<uint32_t>(0);
 
-enum class CommandType : int32_t;
+class IPCError;
+
+enum class CommandType : int32_t {
+	ACK,
+	ERR,
+	SET_LOG_FILE,
+	LOAD_AVISYNTH,
+	NEW_SCRIPT_ENV,
+	GET_SCRIPT_VAR,
+	SET_SCRIPT_VAR,
+	EVAL_SCRIPT,
+	GET_FRAME,
+	SET_FRAME,
+};
+
 class Command {
 protected:
 	uint32_t m_transaction_id;
@@ -71,16 +82,7 @@ template <CommandType Type>
 class Command_Args1_str : public Command {
 	std::string m_arg;
 protected:
-	static std::unique_ptr<Command_Args1_str> deserialize_internal(const void *buf, size_t size)
-	{
-		size_t len = ipc::deserialize_str(nullptr, buf, size);
-		if (len == ~static_cast<size_t>(0))
-			throw_deserialization_error("buffer overrun");
-
-		std::string str(len, '\0');
-		ipc::deserialize_str(&str[0], buf, size);
-		return std::make_unique<Command_Args1_str>(str);
-	}
+	static std::unique_ptr<Command_Args1_str> deserialize_internal(const void *buf, size_t size);
 
 	size_t size_internal() const override { return ipc::serialize_str(nullptr, m_arg.c_str(), m_arg.size()); }
 	void serialize_internal(void *buf) const override { ipc::serialize_str(buf, m_arg.c_str(), m_arg.size()); }
@@ -89,23 +91,14 @@ public:
 
 	const std::string &arg() const { return m_arg; }
 
-	friend std::unique_ptr<Command>(::ipc_client::deserialize_command)(const ipc::Command *command);
+	friend std::unique_ptr<Command> (::ipc_client::deserialize_command)(const ipc::Command *command);
 };
 
 template <CommandType Type>
 class Command_Args1_wstr : public Command {
 	std::wstring m_arg;
 protected:
-	static std::unique_ptr<Command_Args1_wstr> deserialize_internal(const void *buf, size_t size)
-	{
-		size_t len = ipc::deserialize_wstr(nullptr, buf, size);
-		if (len == ~static_cast<size_t>(0))
-			throw_deserialization_error("buffer overrun");
-
-		std::wstring str(len, '\0');
-		ipc::deserialize_wstr(&str[0], buf, size);
-		return std::make_unique<Command_Args1_wstr>(str);
-	}
+	static std::unique_ptr<Command_Args1_wstr> deserialize_internal(const void *buf, size_t size);
 
 	size_t size_internal() const override { return ipc::serialize_wstr(nullptr, m_arg.c_str(), m_arg.size()); }
 	void serialize_internal(void *buf) const override { ipc::serialize_wstr(buf, m_arg.c_str(), m_arg.size()); }
@@ -118,48 +111,20 @@ public:
 };
 
 template <CommandType Type, class T>
-class Commands_Args1_pod : public Command {
+class Command_Args1_pod : public Command {
 	T m_arg;
 protected:
-	static std::unique_ptr<Commands_Args1_pod> deserialize_internal(const void *buf, size_t size)
-	{
-		if (size < sizeof(T))
-			throw_deserialization_error("buffer overrun");
-		return std::make_unique<Commands_Args1_pod>(*static_cast<const T *>(buf));
-	}
+	static std::unique_ptr<Command_Args1_pod> deserialize_internal(const void *buf, size_t size);
 
 	size_t size_internal() const override { return sizeof(T); }
 	void serialize_internal(void *buf) const override { *static_cast<T *>(buf) = m_arg; }
 public:
-	explicit Commands_Args1_pod(const T &arg) : Command{ Type }, m_arg(arg) {}
+	explicit Command_Args1_pod(const T &arg) : Command{ Type }, m_arg(arg) {}
 
 	const T &arg() const { return m_arg; }
 
 	friend std::unique_ptr<Command> (::ipc_client::deserialize_command)(const ipc::Command *command);
 };
-
-} // namespace detail
-
-
-enum class CommandType : int32_t {
-	ACK,
-	ERR,
-	SET_LOG_FILE,
-	LOAD_AVISYNTH,
-	NEW_SCRIPT_ENV,
-	GET_SCRIPT_VAR,
-	SET_SCRIPT_VAR,
-	EVAL_SCRIPT,
-	GET_FRAME,
-	SET_FRAME,
-};
-
-typedef detail::Command_Args0<CommandType::ACK> CommandAck;
-typedef detail::Command_Args0<CommandType::ERR> CommandErr;
-typedef detail::Command_Args1_wstr<CommandType::SET_LOG_FILE> CommandSetLogFile;
-typedef detail::Command_Args1_wstr<CommandType::LOAD_AVISYNTH> CommandLoadAvisynth;
-typedef detail::Command_Args0<CommandType::NEW_SCRIPT_ENV> CommandNewScriptEnv;
-typedef detail::Command_Args1_str<CommandType::GET_SCRIPT_VAR> CommandGetScriptVar;
 
 class CommandSetScriptVar : public Command {
 	std::string m_name;
@@ -173,19 +138,28 @@ public:
 	CommandSetScriptVar(const std::string &name, const ipc::Value &value) :
 		Command{ CommandType::SET_SCRIPT_VAR },
 		m_name{ name },
-		m_value(value)
+		m_value{ value }
 	{}
 
 	const std::string &name() const { return m_name; }
 	const ipc::Value &value() const { return m_value; }
 
-	friend std::unique_ptr<Command> deserialize_command(const ipc::Command *command);
+	friend std::unique_ptr<Command> (::ipc_client::deserialize_command)(const ipc::Command *command);
 };
 
-typedef detail::Commands_Args1_pod<CommandType::EVAL_SCRIPT, uint32_t> CommandEvalScript;
-typedef detail::Commands_Args1_pod<CommandType::GET_FRAME, ipc::VideoFrameRequest> CommandGetFrame;
-typedef detail::Commands_Args1_pod<CommandType::SET_FRAME, ipc::VideoFrame> CommandSetFrame;
+} // namespace detail
 
+
+typedef detail::Command_Args0<CommandType::ACK> CommandAck;
+typedef detail::Command_Args0<CommandType::ERR> CommandErr;
+typedef detail::Command_Args1_wstr<CommandType::SET_LOG_FILE> CommandSetLogFile;
+typedef detail::Command_Args1_wstr<CommandType::LOAD_AVISYNTH> CommandLoadAvisynth;
+typedef detail::Command_Args0<CommandType::NEW_SCRIPT_ENV> CommandNewScriptEnv;
+typedef detail::Command_Args1_str<CommandType::GET_SCRIPT_VAR> CommandGetScriptVar;
+typedef detail::CommandSetScriptVar CommandSetScriptVar;
+typedef detail::Command_Args1_pod<CommandType::EVAL_SCRIPT, uint32_t> CommandEvalScript;
+typedef detail::Command_Args1_pod<CommandType::GET_FRAME, ipc::VideoFrameRequest> CommandGetFrame;
+typedef detail::Command_Args1_pod<CommandType::SET_FRAME, ipc::VideoFrame> CommandSetFrame;
 
 class CommandObserver {
 protected:
