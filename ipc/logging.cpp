@@ -29,12 +29,15 @@ std::atomic<void (*)(const wchar_t *, va_list)> g_wlog_handler{};
 
 const char *ipc_filename(const char *path)
 {
-	if (auto s = std::strrchr(path, '/'))
-		return s + 1;
-	else if (auto s = std::strrchr(path, '\\'))
-		return s + 1;
-	else
-		return path;
+	const char *fslash = std::strrchr(path, '/');
+	const char *bslash = std::strrchr(path, '\\');
+
+	if (fslash && bslash) {
+		fslash = fslash < bslash ? fslash : bslash;
+		bslash = nullptr;
+	}
+
+	return fslash ? fslash + 1 : bslash ? bslash + 1 : path;
 }
 
 void ipc_set_log_handler(void (*func)(const char *, va_list), void (*wfunc)(const wchar_t *, va_list))

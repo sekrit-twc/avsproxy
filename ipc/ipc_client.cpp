@@ -22,7 +22,7 @@ constexpr uint32_t SHMEM_SIZE = 256 * (1UL << 20);
 std::wstring create_slave_command(const std::wstring &slave_path, ::HANDLE shmem_handle, uint32_t shmem_size)
 {
 #define FORMAT L"\"%s\" %u %u %u", slave_path.c_str(), ::GetCurrentProcessId(), HandleToULong(shmem_handle), shmem_size
-	if (slave_path.empty() || slave_path.find(L'"') != std::wstring::npos || slave_path.back() == L'\\')
+	if (slave_path.empty() || slave_path.find(L'"') != std::wstring::npos || slave_path.back() == L'/' || slave_path.back() == L'\\')
 		throw IPCError{ "invalid characters in path" };
 
 	std::wstring cmd(MAX_PATH, L'\0');
