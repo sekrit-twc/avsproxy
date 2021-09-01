@@ -186,8 +186,6 @@ typedef detail::Commands_Args1_pod<CommandType::EVAL_SCRIPT, uint32_t> CommandEv
 typedef detail::Commands_Args1_pod<CommandType::GET_FRAME, ipc::VideoFrameRequest> CommandGetFrame;
 typedef detail::Commands_Args1_pod<CommandType::SET_FRAME, ipc::VideoFrame> CommandSetFrame;
 
-std::unique_ptr<Command> deserialize_command(const ipc::Command *command);
-
 
 class CommandObserver {
 protected:
