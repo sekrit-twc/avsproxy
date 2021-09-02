@@ -69,8 +69,6 @@ class AvisynthHost : public ipc_client::CommandObserver {
 	std::unordered_map<uint32_t, PClip_> m_local_clips;
 	uint32_t m_local_clip_id;
 
-	int check_avs_loaded(ipc_client::Command *c);
-
 	int observe(std::unique_ptr<ipc_client::CommandLoadAvisynth> c) override;
 	int observe(std::unique_ptr<ipc_client::CommandNewScriptEnv> c) override;
 	int observe(std::unique_ptr<ipc_client::CommandSetScriptVar> c) override;

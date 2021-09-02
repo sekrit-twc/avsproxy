@@ -7,6 +7,7 @@
 #include <utility>
 #include <Windows.h>
 #include "ipc/ipc_client.h"
+#include "ipc/ipc_types.h"
 #include "ipc/logging.h"
 #include "ipc/video_types.h"
 
@@ -25,6 +26,9 @@ namespace avs {
 
 namespace {
 
+constexpr size_t MAX_STR_LEN = 1UL << 20;
+
+
 bool is_avisynth_plus()
 {
 	::VideoInfo vi{};
@@ -40,23 +44,23 @@ char *save_string(::IScriptEnvironment *env, const std::string &s)
 std::string heap_to_local_str(ipc_client::IPCClient *client, uint32_t offset)
 {
 	void *ptr = client->offset_to_pointer(offset);
+	if (!ptr)
+		return "";
 
-	try {
-		std::string ret;
+	size_t len = ipc::deserialize_str(nullptr, ptr, -1);
+	if (len > MAX_STR_LEN)
+		throw AvisynthError_{ "string too long" };
 
-		ret.resize(ipc::deserialize_str(nullptr, ptr, -1));
-		ipc::deserialize_str(&ret[0], ptr, -1);
-
-		client->deallocate(ptr);
-		return ret;
-	} catch (...) {
-		client->deallocate(ptr);
-		throw;
-	}
+	std::string ret(len, '\0');
+	ipc::deserialize_str(&ret[0], ptr, -1);
+	return ret;
 }
 
 uint32_t local_to_heap_str(ipc_client::IPCClient *client, const char *str, size_t len)
 {
+	if (len > MAX_STR_LEN)
+		throw AvisynthError_{ "string too long" };
+
 	size_t size = ipc::serialize_str(nullptr, str, len);
 	void *ptr = client->allocate(size);
 	ipc::serialize_str(ptr, str, len);
@@ -154,32 +158,29 @@ ipc::VideoInfo serialize_video_info(const ::VideoInfo &vi)
 	constexpr int plane_order[3] = { PLANAR_Y, PLANAR_U, PLANAR_V };
 
 	void *heap_ptr = client->offset_to_pointer(ipc_frame.heap_offset);
+	if (!heap_ptr)
+		throw AvisynthError_{ "missing frame data" };
+
 	int num_planes = vi.IsPlanar() && !vi.IsY8() ? 3 : 1;
 
-	try {
-		for (int p = 0; p < num_planes; ++p) {
-			if (vi.RowSize(plane_order[p]) > ipc_frame.stride[p])
-				throw AvisynthError_{ "wrong width" };
-			if (ipc_frame.height[p] != vi.height >> (p ? vi.GetPlaneHeightSubsampling(plane_order[p]) : 0))
-				throw AvisynthError_{ "wrong height" };
-		}
-
-		const unsigned char *src_ptr = static_cast<const unsigned char *>(heap_ptr);
-		::PVideoFrame frame = env->NewVideoFrame(vi);
-
-		for (int p = 0; p < num_planes; ++p) {
-			int avs_plane = plane_order[p];
-
-			env->BitBlt(frame->GetWritePtr(avs_plane), frame->GetPitch(avs_plane), src_ptr, ipc_frame.stride[p], frame->GetRowSize(avs_plane), frame->GetHeight(avs_plane));
-			src_ptr += ipc_frame.stride[p] * ipc_frame.height[p];
-		}
-
-		client->deallocate(heap_ptr);
-		return frame;
-	} catch (...) {
-		client->deallocate(heap_ptr);
-		throw;
+	for (int p = 0; p < num_planes; ++p) {
+		if (vi.RowSize(plane_order[p]) > ipc_frame.stride[p])
+			throw AvisynthError_{ "wrong width" };
+		if (ipc_frame.height[p] != vi.height >> (p ? vi.GetPlaneHeightSubsampling(plane_order[p]) : 0))
+			throw AvisynthError_{ "wrong height" };
 	}
+
+	const unsigned char *src_ptr = static_cast<const unsigned char *>(heap_ptr);
+	::PVideoFrame frame = env->NewVideoFrame(vi);
+
+	for (int p = 0; p < num_planes; ++p) {
+		int avs_plane = plane_order[p];
+
+		env->BitBlt(frame->GetWritePtr(avs_plane), frame->GetPitch(avs_plane), src_ptr, ipc_frame.stride[p], frame->GetRowSize(avs_plane), frame->GetHeight(avs_plane));
+		src_ptr += ipc_frame.stride[p] * ipc_frame.height[p];
+	}
+
+	return frame;
 }
 
 ipc::VideoFrame local_to_heap_frame(ipc_client::IPCClient *client, uint32_t clip_id, int32_t n, const ::VideoInfo &vi, const ::PVideoFrame &frame, ::IScriptEnvironment *env)
@@ -212,16 +213,6 @@ ipc::VideoFrame local_to_heap_frame(ipc_client::IPCClient *client, uint32_t clip
 }
 
 } // namespace
-
-
-#define AVS_EX_BEGIN try {
-
-#define AVS_EX_END \
-  } catch (const ::AvisynthError &e) { \
-    throw AvisynthError_{ e.msg }; \
-  } catch (const ::IScriptEnvironment::NotFound &) { \
-    throw AvisynthError_{ "function or variable not defined"}; \
-  }
 
 
 class Cache {
@@ -288,15 +279,22 @@ public:
 			ipc_log("clip %u frame %d not prefetched\n", m_clip_id, n);
 
 			auto response = m_client->send_sync(std::make_unique<ipc_client::CommandGetFrame>(ipc::VideoFrameRequest{ m_clip_id, n }));
-			if (!response || response->type() != ipc_client::CommandType::SET_FRAME)
-				env->ThrowError("remote get frame failed");
+			try {
+				if (!response || response->type() != ipc_client::CommandType::SET_FRAME)
+					env->ThrowError("remote get frame failed");
 
-			ipc_client::CommandSetFrame *set_frame = static_cast<ipc_client::CommandSetFrame *>(response.get());
-			if (set_frame->arg().request.clip_id != m_clip_id || set_frame->arg().request.frame_number != n)
-				env->ThrowError("remote get frame returned wrong frame");
+				ipc_client::CommandSetFrame *set_frame = static_cast<ipc_client::CommandSetFrame *>(response.get());
+				if (set_frame->arg().request.clip_id != m_clip_id || set_frame->arg().request.frame_number != n)
+					env->ThrowError("remote get frame returned wrong frame");
 
-			frame = heap_to_local_frame(m_client, m_vi, set_frame->arg(), env);
-			m_cache->insert(m_clip_id, n, frame);
+				frame = heap_to_local_frame(m_client, m_vi, set_frame->arg(), env);
+				m_cache->insert(m_clip_id, n, frame);
+			} catch (...) {
+				response->deallocate_heap_resources(m_client);
+				throw;
+			}
+
+			response->deallocate_heap_resources(m_client);
 		}
 
 		return frame;
@@ -350,17 +348,35 @@ AvisynthHost::AvisynthHost(ipc_client::IPCClient *client) :
 
 AvisynthHost::~AvisynthHost() = default;
 
-int AvisynthHost::check_avs_loaded(ipc_client::Command *c)
-{
-	if (m_library)
-		return 0;
+#define CHECK_AVS_LOADED(c) \
+  do { \
+    if (!m_library) { \
+      ipc_log("received command type %d before Avisynth loaded\n", c->type()); \
+      if (c->transaction_id()) \
+        send_err(c->transaction_id()); \
+      c->deallocate_heap_resources(m_client); \
+      return 1; \
+    } \
+  } while (0)
 
-	ipc_log("received command type %d before Avisynth loaded\n", c->type());
+#define COMMAND_EX_BEGIN try {
 
-	if (c->transaction_id())
-		send_err(c->transaction_id());
-	return 1;
-}
+#define AVS_EX_BEGIN try {
+
+#define AVS_EX_END \
+  } catch (const ::AvisynthError &e) { \
+    throw AvisynthError_{ e.msg }; \
+  } catch (const ::IScriptEnvironment::NotFound &) { \
+    throw AvisynthError_{ "function or variable not defined"}; \
+  }
+
+#define COMMAND_EX_END \
+  } catch (...) { \
+    c->deallocate_heap_resources(m_client); \
+    throw; \
+  } \
+  c->deallocate_heap_resources(m_client); \
+  c.reset();
 
 int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandLoadAvisynth> c)
 {
@@ -370,12 +386,16 @@ int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandLoadAvisynth> c)
 		if (c->transaction_id())
 			send_err(c->transaction_id());
 
+		c->deallocate_heap_resources(m_client);
 		return 1;
 	}
 
 	ipc_wlog("load avisynth DLL from '%s'\n", c->arg().c_str());
 
+	COMMAND_EX_BEGIN
 	m_library.reset(::LoadLibraryW(c->arg().empty() ? L"avisynth" : c->arg().c_str()));
+	COMMAND_EX_END
+
 	if (!m_library)
 		win32::trap_error("error loading avisynth library");
 
@@ -389,7 +409,7 @@ int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandLoadAvisynth> c)
 
 	try {
 		AVS_EX_BEGIN
-		m_env.reset(m_create_script_env(AVISYNTH_INTERFACE_VERSION));
+			m_env.reset(m_create_script_env(AVISYNTH_INTERFACE_VERSION));
 		AVS_linkage = m_env->GetAVSLinkage();
 		g_avisynth_plus = is_avisynth_plus();
 		AVS_EX_END
@@ -409,8 +429,9 @@ int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandLoadAvisynth> c)
 
 int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandNewScriptEnv> c)
 {
-	if (int ret = check_avs_loaded(c.get()))
-		return ret;
+	CHECK_AVS_LOADED(c);
+	c->deallocate_heap_resources(m_client);
+	c.reset();
 
 	ipc_log0("new script env\n");
 
@@ -434,28 +455,29 @@ int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandNewScriptEnv> c)
 
 int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandGetScriptVar> c)
 {
-	if (int ret = check_avs_loaded(c.get()))
-		return ret;
+	CHECK_AVS_LOADED(c);
 
 	ipc_log("get script var '%s'\n", c->arg());
 
+	COMMAND_EX_BEGIN
 	AVS_EX_BEGIN
 	::AVSValue result = m_env->GetVar(c->arg().c_str());
 	if (!result.Defined())
 		throw IScriptEnvironment::NotFound{};
 	send_avsvalue(c->transaction_id(), result);
 	AVS_EX_END
+	COMMAND_EX_END
 
 	return 1;
 }
 
 int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandSetScriptVar> c)
 {
-	if (int ret = check_avs_loaded(c.get()))
-		return ret;
+	CHECK_AVS_LOADED(c);
 
 	ipc_log("set script var '%s'\n", c->name().c_str());
 
+	COMMAND_EX_BEGIN
 	AVS_EX_BEGIN
 	switch (c->value().type) {
 	case ipc::Value::CLIP:
@@ -466,35 +488,36 @@ int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandSetScriptVar> c)
 		        c->value().c.clip_id, vi.width, vi.height, vi.color_family, vi.subsample_w, vi.subsample_h);
 
 		PClip clip = new VirtualClip{ m_client, m_cache.get(), c->value().c.clip_id, deserialize_video_info(vi) };
-		m_env->SetVar(save_string(m_env.get(), c->name().c_str()), clip);
+		m_env->SetVar(save_string(m_env.get(), c->name()), clip);
 		m_remote_clips[c->value().c.clip_id] = clip;
 		break;
 	}
 	case ipc::Value::BOOL_:
-		m_env->SetVar(save_string(m_env.get(), c->name().c_str()), c->value().b);
+		m_env->SetVar(save_string(m_env.get(), c->name()), c->value().b);
 		break;
 	case ipc::Value::INT:
-		m_env->SetVar(save_string(m_env.get(), c->name().c_str()), static_cast<int>(c->value().i));
+		m_env->SetVar(save_string(m_env.get(), c->name()), static_cast<int>(c->value().i));
 		break;
 	case ipc::Value::FLOAT:
-		m_env->SetVar(save_string(m_env.get(), c->name().c_str()), static_cast<float>(c->value().f));
+		m_env->SetVar(save_string(m_env.get(), c->name()), static_cast<float>(c->value().f));
 		break;
 	case ipc::Value::STRING:
-		m_env->SetVar(save_string(m_env.get(), c->name()), heap_to_local_str(m_client, c->value().s).c_str());
+		m_env->SetVar(save_string(m_env.get(), c->name()), save_string(m_env.get(), heap_to_local_str(m_client, c->value().s)));
 		break;
 	default:
 		throw AvisynthError_{ "unsupported variable type" };
 	}
 	AVS_EX_END
+	COMMAND_EX_END
 
 	return 0;
 }
 
 int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandEvalScript> c)
 {
-	if (int ret = check_avs_loaded(c.get()))
-		return ret;
+	CHECK_AVS_LOADED(c);
 
+	COMMAND_EX_BEGIN
 	AVS_EX_BEGIN
 	std::string script = heap_to_local_str(m_client, c->arg());
 
@@ -505,17 +528,18 @@ int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandEvalScript> c)
 	::AVSValue result = m_env->Invoke("Eval", save_string(m_env.get(), script));
 	send_avsvalue(c->transaction_id(), result);
 	AVS_EX_END
+	COMMAND_EX_END
 
 	return 1;
 }
 
 int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandGetFrame> c)
 {
-	if (int ret = check_avs_loaded(c.get()))
-		return ret;
+	CHECK_AVS_LOADED(c);
 
 	ipc_log("GetFrame clip %u frame %u\n", c->arg().clip_id, c->arg().frame_number);
 
+	COMMAND_EX_BEGIN
 	auto it = m_local_clips.find(c->arg().clip_id);
 	if (it == m_local_clips.end()) {
 		ipc_log0("invalid local clip id\n");
@@ -527,21 +551,30 @@ int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandGetFrame> c)
 	const ::PClip &clip = it->second.get();
 	::PVideoFrame frame = clip->GetFrame(c->arg().frame_number, m_env.get());
 	ipc::VideoFrame ipc_frame = local_to_heap_frame(m_client, c->arg().clip_id, c->arg().frame_number, clip->GetVideoInfo(), frame, m_env.get());
+	std::unique_ptr<ipc_client::Command> result;
 
-	auto result = std::make_unique<ipc_client::CommandSetFrame>(ipc_frame);
+	try {
+		result = std::make_unique<ipc_client::CommandSetFrame>(ipc_frame);
+		ipc_frame.heap_offset = ipc::NULL_OFFSET;
+	} catch (...) {
+		result->deallocate_heap_resources(m_client);
+		m_client->deallocate(m_client->offset_to_pointer(ipc_frame.heap_offset));
+		throw;
+	}
+
 	if (c->transaction_id() != ipc_client::INVALID_TRANSACTION)
 		result->set_response_id(c->transaction_id());
 
 	m_client->send_async(std::move(result));
 	AVS_EX_END
+	COMMAND_EX_END
 
 	return 1;
 }
 
 int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandSetFrame> c)
 {
-	if (int ret = check_avs_loaded(c.get()))
-		return ret;
+	CHECK_AVS_LOADED(c);
 
 	ipc_log("SetFrame clip %u frame %u\n", c->arg().request.clip_id, c->arg().request.frame_number);
 
@@ -549,14 +582,17 @@ int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandSetFrame> c)
 	if (it == m_remote_clips.end()) {
 		ipc_log0("invalid remote clip id\n");
 		send_err(c->transaction_id());
+		c->deallocate_heap_resources(m_client);
 		return 1;
 	}
 
+	COMMAND_EX_BEGIN
 	AVS_EX_BEGIN
 	VirtualClip *clip = static_cast<VirtualClip *>(it->second.get().operator void *());
 	::PVideoFrame frame = heap_to_local_frame(m_client, clip->GetVideoInfo(), c->arg(), m_env.get());
 	m_cache->insert(c->arg().request.clip_id, c->arg().request.frame_number, frame);
 	AVS_EX_END
+	COMMAND_EX_END
 
 	return 0;
 }
@@ -593,7 +629,16 @@ void AvisynthHost::send_avsvalue(uint32_t response_id, const ::AVSValue &avs_val
 		value.s = local_to_heap_str(m_client, str, std::strlen(str));
 	}
 
-	auto response = std::make_unique<ipc_client::CommandSetScriptVar>("", value);
+	std::unique_ptr<ipc_client::Command> response;
+
+	try {
+		response = std::make_unique<ipc_client::CommandSetScriptVar>("", value);
+	} catch (...) {
+		if (value.type == ipc::Value::STRING)
+			m_client->deallocate(m_client->offset_to_pointer(value.s));
+		throw;
+	}
+
 	response->set_response_id(response_id);
 	m_client->send_async(std::move(response));
 }
