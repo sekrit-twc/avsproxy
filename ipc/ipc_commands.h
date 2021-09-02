@@ -91,7 +91,8 @@ class Command_Args1_str : public Command {
 protected:
 	std::string m_arg;
 
-	static std::unique_ptr<Command_Args1_str> deserialize_internal(const void *buf, size_t size);
+	template <class Derived = Command_Args1_str>
+	static std::unique_ptr<Derived> deserialize_internal(const void *buf, size_t size);
 
 	size_t size_internal() const noexcept override { return ipc::serialize_str(nullptr, m_arg.c_str(), m_arg.size()); }
 	void serialize_internal(void *buf) const noexcept override { ipc::serialize_str(buf, m_arg.c_str(), m_arg.size()); }
@@ -108,7 +109,8 @@ class Command_Args1_wstr : public Command {
 protected:
 	std::wstring m_arg;
 
-	static std::unique_ptr<Command_Args1_wstr> deserialize_internal(const void *buf, size_t size);
+	template <class Derived = Command_Args1_wstr>
+	static std::unique_ptr<Derived> deserialize_internal(const void *buf, size_t size);
 
 	size_t size_internal() const noexcept override { return ipc::serialize_wstr(nullptr, m_arg.c_str(), m_arg.size()); }
 	void serialize_internal(void *buf) const noexcept override { ipc::serialize_wstr(buf, m_arg.c_str(), m_arg.size()); }
@@ -125,7 +127,8 @@ class Command_Args1_pod : public Command {
 protected:
 	T m_arg;
 
-	static std::unique_ptr<Command_Args1_pod> deserialize_internal(const void *buf, size_t size);
+	template <class Derived = Command_Args1_pod>
+	static std::unique_ptr<Derived> deserialize_internal(const void *buf, size_t size);
 
 	size_t size_internal() const noexcept override { return sizeof(T); }
 	void serialize_internal(void *buf) const noexcept override { *static_cast<T *>(buf) = m_arg; }
@@ -164,6 +167,11 @@ public:
 };
 
 class CommandEvalScript : public Command_Args1_pod<CommandType::EVAL_SCRIPT, uint32_t> {
+protected:
+	static std::unique_ptr<CommandEvalScript> deserialize_internal(const void *buf, size_t size)
+	{
+		return Command_Args1_pod::deserialize_internal<CommandEvalScript>(buf, size);
+	}
 public:
 	using Command_Args1_pod::Command_Args1_pod;
 
@@ -171,9 +179,16 @@ public:
 
 	void deallocate_heap_resources(IPCClient *client) override;
 	void relinquish_heap_resources() noexcept override;
+
+	friend std::unique_ptr<Command>(::ipc_client::deserialize_command)(const ipc::Command *command);
 };
 
 class CommandSetFrame : public Command_Args1_pod<CommandType::SET_FRAME, ipc::VideoFrame> {
+protected:
+	static std::unique_ptr<CommandSetFrame> deserialize_internal(const void *buf, size_t size)
+	{
+		return Command_Args1_pod::deserialize_internal<CommandSetFrame>(buf, size);
+	}
 public:
 	using Command_Args1_pod::Command_Args1_pod;
 
@@ -181,6 +196,8 @@ public:
 
 	void deallocate_heap_resources(IPCClient *client) override;
 	void relinquish_heap_resources() noexcept override;
+
+	friend std::unique_ptr<Command>(::ipc_client::deserialize_command)(const ipc::Command *command);
 };
 
 } // namespace detail

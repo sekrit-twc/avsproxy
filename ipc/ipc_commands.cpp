@@ -27,7 +27,8 @@ void throw_deserialization_error(const char *msg)
 
 
 template <CommandType Type>
-std::unique_ptr<Command_Args1_str<Type>> Command_Args1_str<Type>::deserialize_internal(const void *buf, size_t size)
+template <class Derived>
+std::unique_ptr<Derived> Command_Args1_str<Type>::deserialize_internal(const void *buf, size_t size)
 {
 	size_t len = ipc::deserialize_str(nullptr, buf, size);
 	if (len == ~static_cast<size_t>(0))
@@ -35,12 +36,13 @@ std::unique_ptr<Command_Args1_str<Type>> Command_Args1_str<Type>::deserialize_in
 
 	std::string str(len, '\0');
 	ipc::deserialize_str(&str[0], buf, size);
-	return std::make_unique<Command_Args1_str>(str);
+	return std::make_unique<Derived>(str);
 }
 
 
 template <CommandType Type>
-std::unique_ptr<Command_Args1_wstr<Type>> Command_Args1_wstr<Type>::deserialize_internal(const void *buf, size_t size)
+template <class Derived>
+std::unique_ptr<Derived> Command_Args1_wstr<Type>::deserialize_internal(const void *buf, size_t size)
 {
 	size_t len = ipc::deserialize_wstr(nullptr, buf, size);
 	if (len == ~static_cast<size_t>(0))
@@ -48,16 +50,17 @@ std::unique_ptr<Command_Args1_wstr<Type>> Command_Args1_wstr<Type>::deserialize_
 
 	std::wstring str(len, '\0');
 	ipc::deserialize_wstr(&str[0], buf, size);
-	return std::make_unique<Command_Args1_wstr>(str);
+	return std::make_unique<Derived>(str);
 }
 
 
 template <CommandType Type, class T>
-std::unique_ptr<Command_Args1_pod<Type, T>> Command_Args1_pod<Type, T>::deserialize_internal(const void *buf, size_t size)
+template <class Derived>
+std::unique_ptr<Derived> Command_Args1_pod<Type, T>::deserialize_internal(const void *buf, size_t size)
 {
 	if (size < sizeof(T))
 		throw_deserialization_error("buffer overrun");
-	return std::make_unique<Command_Args1_pod>(*static_cast<const T *>(buf));
+	return std::make_unique<Derived>(*static_cast<const T *>(buf));
 }
 
 

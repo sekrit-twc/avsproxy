@@ -266,8 +266,10 @@ uint32_t IPCClient::next_transaction_id()
 
 void IPCClient::recv_thread_func()
 {
+	std::unique_ptr<Command> command;
 	std::exception_ptr eptr;
 
+	// Exception safety: exceptions on the receiver thread are session-fatal. Heap cleanup is not required.
 	try {
 		std::vector<unsigned char> command_buf;
 		command_buf.reserve(QUEUE_SIZE);
@@ -299,11 +301,22 @@ void IPCClient::recv_thread_func()
 
 				ipc_log("received command type %d: %u => %u\n", raw_command->type, raw_command->response_id, raw_command->transaction_id);
 
-				std::unique_ptr<Command> command = deserialize_command(raw_command);
+				command = deserialize_command(raw_command);
 				pos += raw_command->size;
 
 				if (!command) {
 					ipc_log0("failed to deserialize command\n");
+
+					if (raw_command->response_id != INVALID_TRANSACTION) {
+						std::lock_guard<std::mutex> lock{ m_worker_mutex };
+						auto it = m_callbacks.find(command->response_id());
+
+						if (it != m_callbacks.end()) {
+							it->second(nullptr);
+							m_callbacks.erase(it);
+						}
+					}
+
 					continue;
 				}
 
@@ -325,6 +338,8 @@ void IPCClient::recv_thread_func()
 				} else if (m_default_cb) {
 					m_default_cb(std::move(command));
 				} else {
+					// Cleanup orphaned command.
+					command->deallocate_heap_resources(this);
 					command = nullptr;
 				}
 			}
@@ -332,15 +347,18 @@ void IPCClient::recv_thread_func()
 	} catch (...) {
 		ipc_log0("exit receiver thread after exception\n");
 		eptr = std::current_exception();
+
+		if (command)
+			command->relinquish_heap_resources();
 	}
 
 	// Record exception information and wake all waiters.
 	std::lock_guard<std::mutex> lock{ m_worker_mutex };
 	m_recv_exception = eptr;
 
-	for (auto it = m_callbacks.begin(); it != m_callbacks.end(); ++it) {
+	for (auto it = m_callbacks.begin(); it != m_callbacks.end(); ) {
 		it->second(nullptr);
-		m_callbacks.erase(it);
+		it = m_callbacks.erase(it);
 	}
 	if (m_default_cb)
 		m_default_cb(nullptr);
@@ -451,26 +469,27 @@ void IPCClient::send_async(std::unique_ptr<Command> command, callback_type cb)
 		return;
 	}
 
-	if (cb) {
-		transaction_id = next_transaction_id();
-		command->set_transaction_id(transaction_id);
-
-		std::lock_guard<std::mutex> lock{ m_worker_mutex };
-		m_callbacks[transaction_id] = std::move(cb);
-	}
-
-	std::vector<unsigned char> data(command->serialized_size());
-	command->serialize(data.data());
-
+	// Exception safety: strong guarantee for exceptions prior to queue write. Callback is never invoked on exception.
 	try {
+		if (cb) {
+			transaction_id = next_transaction_id();
+			command->set_transaction_id(transaction_id);
+
+			std::lock_guard<std::mutex> lock{ m_worker_mutex };
+			m_callbacks[transaction_id] = std::move(cb);
+		}
+
+		std::vector<unsigned char> data(command->serialized_size());
+		command->serialize(data.data());
+
 		ipc_log("async send command type %d: %u\n", command->type(), transaction_id);
 		{
 			win32::MutexGuard lock_guard{ send_mutex() };
 			ipc::queue_write(send_queue(), data.data(), static_cast<uint32_t>(data.size()));
 		}
-		if (!::SetEvent(send_event()))
-			win32::trap_error("error setting event");
 	} catch (...) {
+		command->deallocate_heap_resources(this);
+
 		if (transaction_id != INVALID_TRANSACTION) {
 			try {
 				std::lock_guard<std::mutex> lock{ m_worker_mutex };
@@ -481,6 +500,19 @@ void IPCClient::send_async(std::unique_ptr<Command> command, callback_type cb)
 		}
 
 		throw IPCError{ std::current_exception(), "error sending command" };
+	}
+
+	// Command is visible to remote process. Heap can no longer be deallocated by client.
+	command->relinquish_heap_resources();
+
+	// Exception safety: command already in-flight. Communication errors are session-fatal.
+	try {
+		if (!::SetEvent(send_event()))
+			win32::trap_error("error setting event");
+	} catch (...) {
+		ipc_log_current_exception();
+		stop();
+		throw;
 	}
 }
 
