@@ -9,6 +9,7 @@
 #include <Windows.h>
 #include "ipc/ipc_client.h"
 #include "ipc/ipc_commands.h"
+#include "ipc/ipc_types.h"
 #include "ipc/video_types.h"
 #include "ipc/win32util.h"
 #include "libp2p/p2p_api.h"
@@ -19,6 +20,9 @@ using namespace vsxx;
 namespace {
 
 constexpr char PLUGIN_ID[] = "xxx.abc.avsproxy";
+
+constexpr size_t MAX_STR_LEN = 1UL << 20;
+
 
 std::wstring utf8_to_utf16(const std::string &s)
 {
@@ -37,23 +41,23 @@ std::wstring utf8_to_utf16(const std::string &s)
 std::string heap_to_local_str(ipc_client::IPCClient *client, uint32_t offset)
 {
 	void *ptr = client->offset_to_pointer(offset);
+	if (!ptr)
+		return "";
 
-	try {
-		std::string ret;
+	size_t len = ipc::deserialize_str(nullptr, ptr, -1);
+	if (len > MAX_STR_LEN)
+		throw std::runtime_error{ "string too long" };
 
-		ret.resize(ipc::deserialize_str(nullptr, ptr, -1));
-		ipc::deserialize_str(&ret[0], ptr, -1);
-
-		client->deallocate(ptr);
-		return ret;
-	} catch (...) {
-		client->deallocate(ptr);
-		throw;
-	}
+	std::string ret(len, '\0');
+	ipc::deserialize_str(&ret[0], ptr, -1);
+	return ret;
 }
 
 uint32_t local_to_heap_str(ipc_client::IPCClient *client, const char *str, size_t len)
 {
+	if (len > MAX_STR_LEN)
+		throw std::runtime_error{ "string too long" };
+
 	size_t size = ipc::serialize_str(nullptr, str, len);
 	void *ptr = client->allocate(size);
 	ipc::serialize_str(ptr, str, len);
@@ -157,87 +161,84 @@ ipc::VideoInfo serialize_video_info(const ::VSVideoInfo &vi)
 VideoFrame heap_to_local_frame(ipc_client::IPCClient *client, const ::VSVideoInfo &vi, int32_t color_family, const ipc::VideoFrame &ipc_frame, const VapourCore &core)
 {
 	unsigned char *heap_ptr = static_cast<unsigned char *>(client->offset_to_pointer(ipc_frame.heap_offset));
+	if (!heap_ptr)
+		throw std::runtime_error{ "missing frame data" };
+
 	int src_planes = vi.format->numPlanes;
 
 	if (color_family == ipc::VideoInfo::RGB24 || color_family == ipc::VideoInfo::RGB32 || color_family == ipc::VideoInfo::YUY2)
 		src_planes = 1;
 
-	try {
-		for (int p = 0; p < src_planes; ++p) {
+	for (int p = 0; p < src_planes; ++p) {
+		int row_size = (vi.width >> (p ? vi.format->subSamplingW : 0)) * vi.format->bytesPerSample;
+
+		if (color_family == ipc::VideoInfo::RGB24)
+			row_size *= 3;
+		else if (color_family == ipc::VideoInfo::RGB32)
+			row_size *= 4;
+		else if (color_family == ipc::VideoInfo::YUY2)
+			row_size *= 2;
+
+		if (ipc_frame.stride[p] < row_size)
+			throw std::runtime_error{ "wrong width" };
+		if (ipc_frame.height[p] != (vi.height >> (p ? vi.format->subSamplingH : 0)))
+			throw std::runtime_error{ "wrong height" };
+	}
+
+	VideoFrame frame = core.new_video_frame(*vi.format, vi.width, vi.height);
+	VideoFrame alpha;
+
+	if (color_family == ipc::VideoInfo::RGB32)
+		alpha = core.new_video_frame(*core.format_preset(::pfGray8), vi.width, vi.height);
+
+	if (color_family == ipc::VideoInfo::RGB24 || color_family == ipc::VideoInfo::RGB32 || color_family == ipc::VideoInfo::YUY2) {
+		p2p_buffer_param param{};
+
+		param.src[0] = heap_ptr;
+		param.src_stride[0] = ipc_frame.stride[0];
+
+		for (int p = 0; p < vi.format->numPlanes; ++p) {
+			if (color_family == ipc::VideoInfo::RGB24 || color_family == ipc::VideoInfo::RGB32) {
+				param.dst[p] = frame.write_ptr(p) + (frame.height(p) - 1) * frame.stride(p);
+				param.dst_stride[p] = -frame.stride(p);
+			} else {
+				param.dst[p] = frame.write_ptr(p);
+				param.dst_stride[p] = frame.stride(p);
+			}
+		}
+
+		if (color_family == ipc::VideoInfo::RGB32) {
+			alpha = core.new_video_frame(*core.format_preset(::pfGray8), vi.width, vi.height);
+			param.dst[3] = alpha.write_ptr(0) + (vi.height - 1) * alpha.stride(0);
+			param.dst_stride[3] = -alpha.stride(0);
+		}
+
+		param.width = vi.width;
+		param.height = vi.height;
+
+		if (color_family == ipc::VideoInfo::RGB24)
+			param.packing = p2p_rgb24_le;
+		else if (color_family == ipc::VideoInfo::RGB32)
+			param.packing = p2p_argb32_le;
+		else if (color_family == ipc::VideoInfo::YUY2)
+			param.packing = p2p_yuy2;
+
+		p2p_unpack_frame(&param, 0);
+	} else {
+		const unsigned char *src_ptr = static_cast<const unsigned char *>(heap_ptr);
+
+		for (int p = 0; p < vi.format->numPlanes; ++p) {
 			int row_size = (vi.width >> (p ? vi.format->subSamplingW : 0)) * vi.format->bytesPerSample;
 
-			if (color_family == ipc::VideoInfo::RGB24)
-				row_size *= 3;
-			else if (color_family == ipc::VideoInfo::RGB32)
-				row_size *= 4;
-			else if (color_family == ipc::VideoInfo::YUY2)
-				row_size *= 2;
-
-			if (ipc_frame.stride[p] < row_size)
-				throw std::runtime_error{ "wrong width" };
-			if (ipc_frame.height[p] != (vi.height >> (p ? vi.format->subSamplingH : 0)))
-				throw std::runtime_error{ "wrong height" };
+			vs_bitblt(frame.write_ptr(p), frame.stride(p), src_ptr, ipc_frame.stride[p], row_size, ipc_frame.height[p]);
+			src_ptr += ipc_frame.stride[p] * ipc_frame.height[p];
 		}
-
-		VideoFrame frame = core.new_video_frame(*vi.format, vi.width, vi.height);
-		VideoFrame alpha;
-
-		if (color_family == ipc::VideoInfo::RGB32)
-			alpha = core.new_video_frame(*core.format_preset(::pfGray8), vi.width, vi.height);
-
-		if (color_family == ipc::VideoInfo::RGB24 || color_family == ipc::VideoInfo::RGB32 || color_family == ipc::VideoInfo::YUY2) {
-			p2p_buffer_param param{};
-
-			param.src[0] = heap_ptr;
-			param.src_stride[0] = ipc_frame.stride[0];
-
-			for (int p = 0; p < vi.format->numPlanes; ++p) {
-				if (color_family == ipc::VideoInfo::RGB24 || color_family == ipc::VideoInfo::RGB32) {
-					param.dst[p] = frame.write_ptr(p) + (frame.height(p) - 1) * frame.stride(p);
-					param.dst_stride[p] = -frame.stride(p);
-				} else {
-					param.dst[p] = frame.write_ptr(p);
-					param.dst_stride[p] = frame.stride(p);
-				}
-			}
-
-			if (color_family == ipc::VideoInfo::RGB32) {
-				alpha = core.new_video_frame(*core.format_preset(::pfGray8), vi.width, vi.height);
-				param.dst[3] = alpha.write_ptr(0) + (vi.height - 1) * alpha.stride(0);
-				param.dst_stride[3] = -alpha.stride(0);
-			}
-
-			param.width = vi.width;
-			param.height = vi.height;
-
-			if (color_family == ipc::VideoInfo::RGB24)
-				param.packing = p2p_rgb24_le;
-			else if (color_family == ipc::VideoInfo::RGB32)
-				param.packing = p2p_argb32_le;
-			else if (color_family == ipc::VideoInfo::YUY2)
-				param.packing = p2p_yuy2;
-
-			p2p_unpack_frame(&param, 0);
-		} else {
-			const unsigned char *src_ptr = static_cast<const unsigned char *>(heap_ptr);
-
-			for (int p = 0; p < vi.format->numPlanes; ++p) {
-				int row_size = (vi.width >> (p ? vi.format->subSamplingW : 0)) * vi.format->bytesPerSample;
-
-				vs_bitblt(frame.write_ptr(p), frame.stride(p), src_ptr, ipc_frame.stride[p], row_size, ipc_frame.height[p]);
-				src_ptr += ipc_frame.stride[p] * ipc_frame.height[p];
-			}
-		}
-
-		if (alpha)
-			frame.frame_props().set_prop("_Alpha", alpha);
-
-		client->deallocate(heap_ptr);
-		return frame;
-	} catch (...) {
-		client->deallocate(heap_ptr);
-		throw;
 	}
+
+	if (alpha)
+		frame.frame_props().set_prop("_Alpha", alpha);
+
+	return frame;
 }
 
 ipc::VideoFrame local_to_heap_frame(ipc_client::IPCClient *client, uint32_t clip_id, int32_t n, const ::VSVideoInfo &vi, const ConstVideoFrame &frame)
@@ -324,14 +325,23 @@ class AVSProxy : public vsxx::FilterBase {
 		m_remote_exit = true;
 	}
 
-	void throw_on_error(ipc_client::Command *c, ipc_client::CommandType expected_type = ipc_client::CommandType::ACK) const
+	std::unique_ptr<ipc_client::Command> expect_response(std::unique_ptr<ipc_client::Command> c, ipc_client::CommandType expected_type)
 	{
+		auto throw_ = [&](const char *msg)
+		{
+			if (c)
+				reject(std::move(c));
+			throw std::runtime_error{ msg };
+		};
+
 		if (!c)
-			throw std::runtime_error{ "no response received for command" };
+			throw_("no response received for command");
 		if (c->type() == ipc_client::CommandType::ERR)
-			throw std::runtime_error{ "command failed" };
+			throw_("command failed");
 		if (c->type() != expected_type)
-			throw std::runtime_error{ "unexpected resposne received for command" };
+			throw_("unexpected resposne received for command");
+
+		return c;
 	}
 
 	void recv_callback(std::unique_ptr<ipc_client::Command> c)
@@ -350,7 +360,8 @@ class AVSProxy : public vsxx::FilterBase {
 	void runloop_callback(uint32_t request, std::unique_ptr<ipc_client::Command> c)
 	{
 		if (request != m_active_request) {
-			dispose_err(std::move(c));
+			c->deallocate_heap_resources(m_client.get());
+			send_err(c->transaction_id());
 			return;
 		}
 
@@ -361,30 +372,6 @@ class AVSProxy : public vsxx::FilterBase {
 
 		lock.unlock();
 		m_cond.notify_all();
-	}
-
-	void dispose_err(std::unique_ptr<ipc_client::Command> c)
-	{
-		switch (c->type()) {
-		case ipc_client::CommandType::EVAL_SCRIPT:
-			m_client->deallocate(
-				m_client->offset_to_pointer(static_cast<ipc_client::CommandEvalScript *>(c.get())->arg()));
-			break;
-		case ipc_client::CommandType::SET_SCRIPT_VAR:
-			if (static_cast<ipc_client::CommandSetScriptVar *>(c.get())->value().type == ipc::Value::STRING) {
-				m_client->deallocate(
-					m_client->offset_to_pointer(static_cast<ipc_client::CommandSetScriptVar *>(c.get())->value().s));
-			}
-			break;
-		case ipc_client::CommandType::SET_FRAME:
-			m_client->deallocate(
-				m_client->offset_to_pointer(static_cast<ipc_client::CommandSetFrame *>(c.get())->arg().heap_offset));
-			break;
-		default:
-			break;
-		}
-
-		send_err(c->transaction_id());
 	}
 
 	void send_ack(uint32_t response_id)
@@ -407,6 +394,18 @@ class AVSProxy : public vsxx::FilterBase {
 		m_client->send_async(std::move(response));
 	}
 
+	void expect_ack(std::unique_ptr<ipc_client::Command> c)
+	{
+		c = expect_response(std::move(c), ipc_client::CommandType::ACK);
+		c->deallocate_heap_resources(m_client.get());
+	}
+
+	void reject(std::unique_ptr<ipc_client::Command> c)
+	{
+		c->deallocate_heap_resources(m_client.get());
+		send_err(c->transaction_id());
+	}
+
 	void reject_commands()
 	{
 		// Caller must acquire mutex.
@@ -416,7 +415,7 @@ class AVSProxy : public vsxx::FilterBase {
 		while (!m_command_queue.empty()) {
 			std::unique_ptr<ipc_client::Command> c{ std::move(m_command_queue.front()) };
 			m_command_queue.pop_front();
-			dispose_err(std::move(c));
+			reject(std::move(c));
 		}
 	}
 
@@ -424,6 +423,7 @@ class AVSProxy : public vsxx::FilterBase {
 	{
 		auto it = m_clips.find(c->arg().clip_id);
 		if (it == m_clips.end()) {
+			c->deallocate_heap_resources(m_client.get());
 			send_err(c->transaction_id());
 			return;
 		}
@@ -433,20 +433,31 @@ class AVSProxy : public vsxx::FilterBase {
 		try {
 			frame = it->second.get_frame(c->arg().frame_number);
 		} catch (...) {
+			c->deallocate_heap_resources(m_client.get());
 			send_err(c->transaction_id());
 			return;
 		}
 
 		ipc::VideoFrame ipc_frame = local_to_heap_frame(m_client.get(), c->arg().clip_id, c->arg().frame_number, it->second.video_info(), frame);
-		std::unique_ptr<ipc_client::Command> response = std::make_unique<ipc_client::CommandSetFrame>(ipc_frame);
+		std::unique_ptr<ipc_client::Command> response;
+
+		try {
+			response = std::make_unique<ipc_client::CommandSetFrame>(ipc_frame);
+		} catch (...) {
+			m_client->deallocate(m_client->offset_to_pointer(ipc_frame.heap_offset));
+			throw;
+		}
+
 		response->set_response_id(c->transaction_id());
 		m_client->send_async(std::move(response));
 	}
 
 	std::unique_ptr<ipc_client::Command> runloop(std::unique_ptr<ipc_client::Command> c)
 	{
-		if (m_remote_exit)
+		if (m_remote_exit) {
+			c->deallocate_heap_resources(m_client.get());
 			throw std::runtime_error{ "remote process exited" };
+		}
 
 		std::unique_lock<std::mutex> lock{ m_mutex };
 		reject_commands();
@@ -470,7 +481,7 @@ class AVSProxy : public vsxx::FilterBase {
 				lock.unlock();
 
 				if (c->type() != ipc_client::CommandType::GET_FRAME) {
-					dispose_err(std::move(c));
+					reject(std::move(c));
 					lock.lock();
 					continue;
 				}
@@ -493,7 +504,7 @@ public:
 		m_vi{},
 		m_active_request{},
 		m_runloop_response_received{},
-		m_remote_exit {}
+		m_remote_exit{}
 	{}
 
 	const char *get_name(int index) noexcept override { return "Avisynth 32-bit proxy"; }
@@ -522,7 +533,7 @@ public:
 		std::unique_ptr<ipc_client::Command> response;
 
 		response = m_client->send_sync(std::make_unique<ipc_client::CommandLoadAvisynth>(avisynth_path.c_str()));
-		throw_on_error(response.get());
+		expect_ack(std::move(response));
 
 		if (in.contains("clips")) {
 			size_t num_clips = in.num_elements("clips");
@@ -539,17 +550,28 @@ public:
 				value.c.vi = serialize_video_info(node.video_info());
 
 				response = m_client->send_sync(std::make_unique<ipc_client::CommandSetScriptVar>(name, value));
-				throw_on_error(response.get());
+				expect_ack(std::move(response));
 
 				m_clips[static_cast<int>(i)] = std::move(node);
 			}
 		}
 
 		uint32_t heap_script = local_to_heap_str(m_client.get(), script.c_str(), script.size());
-		response = runloop(std::make_unique<ipc_client::CommandEvalScript>(heap_script));
-		throw_on_error(response.get(), ipc_client::CommandType::SET_SCRIPT_VAR);
+		std::unique_ptr<ipc_client::Command> eval_command;
+
+		try {
+			eval_command = std::make_unique<ipc_client::CommandEvalScript>(heap_script);
+		} catch (...) {
+			m_client->deallocate(m_client->offset_to_pointer(heap_script));
+			throw;
+		}
+
+		response = runloop(std::move(eval_command));
+		response = expect_response(std::move(response), ipc_client::CommandType::SET_SCRIPT_VAR);
 
 		m_script_result = static_cast<ipc_client::CommandSetScriptVar *>(response.get())->value();
+		response->relinquish_heap_resources();
+
 		if (m_script_result.type == ipc::Value::CLIP)
 			m_vi = deserialize_video_info(m_script_result.c.vi, core);
 		else
@@ -560,12 +582,13 @@ public:
 
 	void post_init(const ConstPropertyMap &in, const PropertyMap &out, const VapourCore &core) override
 	{
-		// Delete "clip" if the script did not return a clip.
 		if (m_script_result.type == ipc::Value::CLIP)
 			return;
 
 		// Increase ref count temporarily.
 		FilterNode self = out.get_prop<FilterNode>("clip");
+
+		// Delete "clip" if the script did not return a clip.
 		out.erase("clip");
 
 		switch (m_script_result.type) {
@@ -579,7 +602,13 @@ public:
 			out.set_prop("result", m_script_result.f);
 			break;
 		case ipc::Value::STRING:
-			out.set_prop("result", heap_to_local_str(m_client.get(), m_script_result.s));
+			try {
+				out.set_prop("result", heap_to_local_str(m_client.get(), m_script_result.s));
+			} catch (...) {
+				m_client->deallocate(m_client->offset_to_pointer(m_script_result.s));
+				throw;
+			}
+			m_client->deallocate(m_client->offset_to_pointer(m_script_result.s));
 			break;
 		default:
 			break;
@@ -596,10 +625,20 @@ public:
 		try {
 			std::unique_ptr<ipc_client::Command> response = runloop(
 				std::make_unique<ipc_client::CommandGetFrame>(ipc::VideoFrameRequest{ m_script_result.c.clip_id, n }));
-			throw_on_error(response.get(), ipc_client::CommandType::SET_FRAME);
+			response = expect_response(std::move(response), ipc_client::CommandType::SET_FRAME);
 
 			ipc_client::CommandSetFrame *set_frame = static_cast<ipc_client::CommandSetFrame *>(response.get());
-			return heap_to_local_frame(m_client.get(), m_vi, m_script_result.c.vi.color_family, set_frame->arg(), core);
+			VideoFrame result;
+
+			try {
+				result = heap_to_local_frame(m_client.get(), m_vi, m_script_result.c.vi.color_family, set_frame->arg(), core);
+			} catch (...) {
+				response->deallocate_heap_resources(m_client.get());
+				throw;
+			}
+
+			response->deallocate_heap_resources(m_client.get());
+			return result;
 		} catch (const ipc_client::IPCError &) {
 			fatal();
 			throw;
