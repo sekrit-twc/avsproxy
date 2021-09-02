@@ -3,6 +3,7 @@
 #include "ipc_client.h"
 #include "ipc_commands.h"
 #include "ipc_types.h"
+#include "logging.h"
 
 namespace ipc_client {
 
@@ -84,6 +85,12 @@ std::unique_ptr<CommandSetScriptVar> CommandSetScriptVar::deserialize_internal(c
 	return std::make_unique<CommandSetScriptVar>(name, value);
 }
 
+CommandSetScriptVar::~CommandSetScriptVar()
+{
+	if (m_value.type == ipc::Value::STRING && m_value.s != ipc::NULL_OFFSET)
+		ipc_log("leaking heap allocation at %u", m_value.s);
+}
+
 size_t CommandSetScriptVar::size_internal() const
 {
 	size_t size = ipc::serialize_str(nullptr, m_name.data(), m_name.size());
@@ -98,6 +105,56 @@ void CommandSetScriptVar::serialize_internal(void *buf) const
 	if (size % alignof(ipc::Value))
 		size += alignof(ipc::Value) - size % alignof(ipc::Value);
 	*reinterpret_cast<ipc::Value *>(static_cast<unsigned char *>(buf) + size) = m_value;
+}
+
+void CommandSetScriptVar::deallocate_heap_resources(IPCClient *client)
+{
+	if (m_value.type == ipc::Value::STRING) {
+		client->deallocate(client->offset_to_pointer(m_value.s));
+		m_value.s = ipc::NULL_OFFSET;
+	}
+}
+
+void CommandSetScriptVar::relinquish_heap_resources() noexcept
+{
+	if (m_value.type == ipc::Value::STRING)
+		m_value.s = ipc::NULL_OFFSET;
+}
+
+
+CommandEvalScript::~CommandEvalScript()
+{
+	if (m_arg != ipc::NULL_OFFSET)
+		ipc_log("leaking heap allocation at %u", m_arg);
+}
+
+void CommandEvalScript::deallocate_heap_resources(IPCClient *client)
+{
+	client->deallocate(client->offset_to_pointer(m_arg));
+	m_arg = ipc::NULL_OFFSET;
+}
+
+void CommandEvalScript::relinquish_heap_resources() noexcept
+{
+	m_arg = ipc::NULL_OFFSET;
+}
+
+
+CommandSetFrame::~CommandSetFrame()
+{
+	if (m_arg.heap_offset != ipc::NULL_OFFSET)
+		ipc_log("leaking heap allocation at %u", m_arg.heap_offset);
+}
+
+void CommandSetFrame::deallocate_heap_resources(IPCClient *client)
+{
+	client->deallocate(client->offset_to_pointer(m_arg.heap_offset));
+	m_arg.heap_offset = ipc::NULL_OFFSET;
+}
+
+void CommandSetFrame::relinquish_heap_resources() noexcept
+{
+	m_arg.heap_offset = ipc::NULL_OFFSET;
 }
 
 } // namespace detail
