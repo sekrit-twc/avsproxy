@@ -68,11 +68,11 @@ struct alignas(8) Value {
 
 
 // String functions.
-size_t deserialize_str(char *dst, const void *src, size_t buf_size);
-size_t serialize_str(void *dst, const char *src, size_t len = -1);
+size_t deserialize_str(char *dst, const void *src, size_t buf_size) noexcept;
+size_t serialize_str(void *dst, const char *src, size_t len = -1) noexcept;
 
-size_t deserialize_wstr(wchar_t *dst, const void *src, size_t buf_size);
-size_t serialize_wstr(void *dst, const wchar_t *src, size_t len = -1);
+size_t deserialize_wstr(wchar_t *dst, const void *src, size_t buf_size) noexcept;
+size_t serialize_wstr(void *dst, const wchar_t *src, size_t len = -1) noexcept;
 
 } // namespace ipc
 

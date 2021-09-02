@@ -91,15 +91,16 @@ CommandSetScriptVar::~CommandSetScriptVar()
 		ipc_log("leaking heap allocation at %u", m_value.s);
 }
 
-size_t CommandSetScriptVar::size_internal() const
+size_t CommandSetScriptVar::size_internal() const noexcept
 {
 	size_t size = ipc::serialize_str(nullptr, m_name.data(), m_name.size());
+	assert(size <= UINT32_MAX - sizeof(ipc::Value));
 	if (size % alignof(ipc::Value))
 		size += alignof(ipc::Value) - size % alignof(ipc::Value);
 	return size + sizeof(ipc::Value);
 }
 
-void CommandSetScriptVar::serialize_internal(void *buf) const
+void CommandSetScriptVar::serialize_internal(void *buf) const noexcept
 {
 	size_t size = ipc::serialize_str(buf, m_name.data(), m_name.size());
 	if (size % alignof(ipc::Value))
@@ -166,14 +167,16 @@ void Command::deserialize_common(const ipc::Command *command)
 	m_response_id = command->response_id;
 }
 
-size_t Command::serialized_size() const
+size_t Command::serialized_size() const noexcept
 {
-	size_t size = sizeof(ipc::Command) + size_internal();
+	size_t internal_size = size_internal();
+	assert(internal_size <= UINT32_MAX);
+	size_t size = sizeof(ipc::Command) + internal_size;
 	assert(size <= UINT32_MAX);
 	return size;
 }
 
-void Command::serialize(void *buf) const
+void Command::serialize(void *buf) const noexcept
 {
 	ipc::Command *command = new (buf) ipc::Command{};
 	command->size = static_cast<uint32_t>(serialized_size());

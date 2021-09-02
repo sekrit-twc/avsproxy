@@ -57,22 +57,22 @@ size_t serialize_chars(void *dst, const T *src, size_t len)
 } // namespace
 
 
-size_t deserialize_str(char *dst, const void *src, size_t buf_size)
+size_t deserialize_str(char *dst, const void *src, size_t buf_size) noexcept
 {
 	return deserialize_chars(dst, src, buf_size);
 }
 
-size_t serialize_str(void *dst, const char *src, size_t len)
+size_t serialize_str(void *dst, const char *src, size_t len) noexcept
 {
 	return serialize_chars(dst, src, len);
 }
 
-size_t deserialize_wstr(wchar_t *dst, const void *src, size_t buf_size)
+size_t deserialize_wstr(wchar_t *dst, const void *src, size_t buf_size) noexcept
 {
 	return deserialize_chars(dst, src, buf_size);
 }
 
-size_t serialize_wstr(void *dst, const wchar_t *src, size_t len)
+size_t serialize_wstr(void *dst, const wchar_t *src, size_t len) noexcept
 {
 	return serialize_chars(dst, src, len);
 }
