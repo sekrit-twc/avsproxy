@@ -53,7 +53,7 @@ protected:
 public:
 	virtual ~Command() = default;
 
-	// Deallocate resources help on the IPC heap. Any heap resources must be deallocated
+	// Deallocate resources held on the IPC heap. Any heap resources must be deallocated
 	// or relinquished before the destructor is called.
 	virtual void deallocate_heap_resources(IPCClient *client) {}
 

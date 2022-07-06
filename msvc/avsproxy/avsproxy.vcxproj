@@ -76,7 +76,7 @@
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\..</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\..\libp2p;$(ProjectDir)..\..\vsxx;$(ProjectDir)..\..\vsxx\vapoursynth;$(ProjectDir)..\..</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_SCL_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
@@ -90,7 +90,7 @@
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\..</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\..\libp2p;$(ProjectDir)..\..\vsxx;$(ProjectDir)..\..\vsxx\vapoursynth;$(ProjectDir)..\..</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_SCL_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
@@ -106,7 +106,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\..</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\..\libp2p;$(ProjectDir)..\..\vsxx;$(ProjectDir)..\..\vsxx\vapoursynth;$(ProjectDir)..\..</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_SCL_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
@@ -124,7 +124,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\..</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\..\libp2p;$(ProjectDir)..\..\vsxx;$(ProjectDir)..\..\vsxx\vapoursynth;$(ProjectDir)..\..</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_SCL_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
@@ -136,14 +136,13 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\..\avsproxy\avsproxy.cpp" />
-    <ClCompile Include="..\..\vsxx\vsxx_pluginmain.cpp" />
+    <ClCompile Include="..\..\vsxx\vsxx4_pluginmain.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\vsxx\VapourSynth++.hpp" />
-    <ClInclude Include="..\..\vsxx\VapourSynth.h" />
-    <ClInclude Include="..\..\vsxx\VSHelper.h" />
-    <ClInclude Include="..\..\vsxx\VSScript.h" />
-    <ClInclude Include="..\..\vsxx\vsxx_pluginmain.h" />
+    <ClInclude Include="..\..\vsxx\VapourSynth4++.hpp" />
+    <ClInclude Include="..\..\vsxx\vapoursynth\VapourSynth4.h" />
+    <ClInclude Include="..\..\vsxx\vapoursynth\VSHelper4.h" />
+    <ClInclude Include="..\..\vsxx\vsxx4_pluginmain.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
