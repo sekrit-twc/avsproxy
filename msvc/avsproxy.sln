@@ -84,5 +84,6 @@ Global
 	EndGlobalSection
 	GlobalSection(SharedMSBuildProjectFiles) = preSolution
 		..\libp2p\_msvc\p2p_sources\p2p_sources.vcxitems*{0955e601-dabb-442d-afff-eb4b2bf331fd}*SharedItemsImports = 4
+		..\libp2p\_msvc\p2p_sources\p2p_sources.vcxitems*{899dd8f7-6cc3-46d1-8d5d-5afb20072fc1}*SharedItemsImports = 9
 	EndGlobalSection
 EndGlobal
