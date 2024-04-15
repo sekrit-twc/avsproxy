@@ -182,9 +182,6 @@ Frame heap_to_local_frame(ipc_client::IPCClient *client, const ::VSVideoInfo &vi
 	Frame frame = core.new_video_frame(vi.format, vi.width, vi.height);
 	Frame alpha;
 
-	if (color_family == ipc::VideoInfo::RGB32)
-		alpha = core.new_video_frame(core.get_video_format_by_id(::pfGray8), vi.width, vi.height);
-
 	if (color_family == ipc::VideoInfo::RGB24 || color_family == ipc::VideoInfo::RGB32 || color_family == ipc::VideoInfo::YUY2) {
 		p2p_buffer_param param{};
 
