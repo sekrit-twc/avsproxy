@@ -3,4 +3,4 @@
 	url = https://github.com/sekrit-twc/vsxx.git
 [submodule "libp2p"]
 	path = libp2p
-	url = https://sekrit-twc@bitbucket.org/the-sekrit-twc/libp2p.git
+	url = https://github.com/sekrit-twc/libp2p.git
