@@ -152,7 +152,7 @@ ipc::VideoInfo serialize_video_info(const ::VSVideoInfo &vi)
 	return ipc_vi;
 }
 
-Frame heap_to_local_frame(ipc_client::IPCClient *client, const ::VSVideoInfo &vi, int32_t color_family, const ipc::VideoFrame &ipc_frame, const Core &core)
+Frame heap_to_local_frame(ipc_client::IPCClient *client, const ::VSVideoInfo &vi, int32_t color_family, bool keep_alpha, const ipc::VideoFrame &ipc_frame, const Core &core)
 {
 	unsigned char *heap_ptr = static_cast<unsigned char *>(client->offset_to_pointer(ipc_frame.heap_offset));
 	if (!heap_ptr)
@@ -197,7 +197,7 @@ Frame heap_to_local_frame(ipc_client::IPCClient *client, const ::VSVideoInfo &vi
 			param.dst[p] = frame.write_ptr(p);
 			param.dst_stride[p] = frame.stride(p);
 		}
-		if (color_family == ipc::VideoInfo::RGB32) {
+		if (color_family == ipc::VideoInfo::RGB32 && keep_alpha) {
 			alpha = core.new_video_frame(core.get_video_format_by_id(::pfGray8), vi.width, vi.height);
 			param.dst[3] = alpha.write_ptr(0) + (vi.height - 1) * alpha.stride(0);
 			param.dst_stride[3] = -alpha.stride(0);
@@ -225,7 +225,7 @@ Frame heap_to_local_frame(ipc_client::IPCClient *client, const ::VSVideoInfo &vi
 	}
 
 	if (alpha)
-		frame.frame_props_rw().set_prop("_Alpha", alpha);
+		frame.frame_props_rw().set_prop("_Alpha", std::move(alpha));
 
 	return frame;
 }
@@ -293,6 +293,7 @@ class AVSProxy : public FilterBase {
 	std::unordered_map<uint32_t, FilterNode> m_clips;
 	ipc::Value m_script_result;
 	::VSVideoInfo m_vi;
+	bool m_alpha;
 
 	std::deque<std::unique_ptr<ipc_client::Command>> m_command_queue;
 	std::unique_ptr<ipc_client::Command> m_runloop_response;
@@ -485,6 +486,7 @@ public:
 	AVSProxy(void * = nullptr) :
 		m_script_result{},
 		m_vi{},
+		m_alpha{},
 		m_active_request{},
 		m_runloop_response_received{},
 		m_remote_exit{}
@@ -559,6 +561,7 @@ public:
 		// Create a filter if the result was a clip.
 		case ipc::Value::CLIP: {
 			m_vi = deserialize_video_info(m_script_result.c.vi, core);
+			m_alpha = in.get_prop<bool>("alpha", map::Ignore{});
 
 			FilterDependencyBuilder deps = make_deps();
 			for (const auto &entry : m_clips) {
@@ -600,7 +603,7 @@ public:
 			ConstFrame result;
 
 			try {
-				result = heap_to_local_frame(m_client.get(), m_vi, m_script_result.c.vi.color_family, set_frame->arg(), core);
+				result = heap_to_local_frame(m_client.get(), m_vi, m_script_result.c.vi.color_family, m_alpha, set_frame->arg(), core);
 			} catch (...) {
 				response->deallocate_heap_resources(m_client.get());
 				throw;
@@ -622,6 +625,6 @@ public:
 
 const PluginInfo4 g_plugin_info4{
 	PLUGIN_ID, "avsw", "avsproxy", 0, {
-		{ &FilterBase::filter_create<AVSProxy>, "Eval", "script:data;clips:vnode[]:opt;clip_names:data[]:opt;avisynth:data:opt;slave:data:opt;slave_log:data:opt;", "any" }
+		{ &FilterBase::filter_create<AVSProxy>, "Eval", "script:data;clips:vnode[]:opt;clip_names:data[]:opt;alpha:int:opt;avisynth:data:opt;slave:data:opt;slave_log:data:opt;", "any" }
 	}
 };

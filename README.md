@@ -2,11 +2,12 @@
 
 Embed 32-bit Avisynth 2.6 or Avisynth+ environment within 64-bit VapourSynth.
 
-    avsw.Eval(string script, clip[] "clips", string[] "clip_names", string "avisynth", string "slave", string "slave_log")
+    avsw.Eval(string script, clip[] "clips", string[] "clip_names", bool "alpha", string "avisynth", string "slave", string "slave_log")
     
  * **script** - Avisynth script fragment
  * **clips** - VapourSynth clips ("nodes") to inject into Avisynth environment
  * **clip_names** - Avisynth variable name corresponding to injected clip
+ * **alpha** - Keep the alpha channel of RGB32 clips as the _Alpha frame property
  * **avisynth** - Path to Avisynth DLL. The default uses the process DLL search path.
  * **slave** - Path to avshost_native.exe slave process. The plugin path is searched by default.
  * **slave_log** - Log file for slave process.
