@@ -4,7 +4,6 @@
 #include <cstdio>
 #include <cstring>
 #include <exception>
-#include <stdexcept>
 #include <system_error>
 #include "ipc_client.h"
 #include "logging.h"

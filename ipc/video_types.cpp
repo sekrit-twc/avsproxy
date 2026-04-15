@@ -1,4 +1,3 @@
-#include <cassert>
 #include <cstdint>
 #include <string>
 #include "video_types.h"

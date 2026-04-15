@@ -3,8 +3,6 @@
 #ifndef IPC_WIN32UTIL_H_
 #define IPC_WIN32UTIL_H_
 
-#include <cstddef>
-#include <cstdint>
 #include <memory>
 
 struct HINSTANCE__;
