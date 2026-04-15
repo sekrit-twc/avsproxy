@@ -17,6 +17,9 @@
   #include "avisynth_2.6.h"
 #endif
 
+static_assert(AVISYNTH_INTERFACE_VERSION >= 6, "required AVSI v6+");
+constexpr int AVS_2_6 = 6;
+
 #include "avshost.h"
 
 const AVS_Linkage *AVS_linkage;
@@ -409,7 +412,7 @@ int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandLoadAvisynth> c)
 
 	try {
 		AVS_EX_BEGIN
-			m_env.reset(m_create_script_env(AVISYNTH_INTERFACE_VERSION));
+		m_env.reset(m_create_script_env(AVS_2_6));
 		AVS_linkage = m_env->GetAVSLinkage();
 		g_avisynth_plus = is_avisynth_plus();
 		AVS_EX_END
@@ -436,7 +439,7 @@ int AvisynthHost::observe(std::unique_ptr<ipc_client::CommandNewScriptEnv> c)
 	ipc_log0("new script env\n");
 
 	AVS_EX_BEGIN
-	std::unique_ptr<::IScriptEnvironment, IScriptEnvironmentDeleter> env{ m_create_script_env(6) };
+	std::unique_ptr<::IScriptEnvironment, IScriptEnvironmentDeleter> env{ m_create_script_env(AVS_2_6) };
 	if (!env)
 		throw AvisynthError_{ "avisynth library has incompatible interface version" };
 
