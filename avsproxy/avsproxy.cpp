@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstdint>
 #include <deque>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -24,20 +25,6 @@ constexpr char PLUGIN_ID[] = "xxx.abc.avsproxy";
 
 constexpr size_t MAX_STR_LEN = 1UL << 20;
 
-
-std::wstring utf8_to_utf16(const std::string &s)
-{
-	if (s.empty())
-		return L"";
-
-	int required = ::MultiByteToWideChar(CP_UTF8, 0, s.c_str(), static_cast<int>(s.size()), nullptr, 0);
-	if (required <= 0)
-		win32::trap_error("UTF-8 decoding error");
-
-	std::wstring ws(required, L'\0');
-	::MultiByteToWideChar(CP_UTF8, 0, s.c_str(), static_cast<int>(s.size()), &ws[0], required);
-	return ws;
-}
 
 std::string heap_to_local_str(ipc_client::IPCClient *client, uint32_t offset)
 {
@@ -499,19 +486,19 @@ public:
 		Plugin this_plugin = core.get_plugin_by_id(PLUGIN_ID);
 
 		std::string script = in.get_prop<std::string>("script");
-		std::wstring avisynth_path = utf8_to_utf16(in.get_prop<std::string>("avisynth", map::Ignore{}));
-		std::wstring slave_path = utf8_to_utf16(in.get_prop<std::string>("slave", map::Ignore{}));
+		std::filesystem::path avisynth_path = std::filesystem::u8path(in.get_prop<std::string>("avisynth", map::Ignore{}));
+		std::filesystem::path slave_path = std::filesystem::u8path(in.get_prop<std::string>("slave", map::Ignore{}));
 
 		if (slave_path.empty()) {
-			std::string plugin_path = this_plugin.path();
-			slave_path = utf8_to_utf16(plugin_path.substr(0, plugin_path.find_last_of('/')) + "/avshost_native.exe");
+			slave_path = std::filesystem::u8path(this_plugin.path());
+			slave_path.replace_filename(L"avshost_native.exe");
 		}
 
 		m_client = std::make_unique<ipc_client::IPCClient>(ipc_client::IPCClient::master(), slave_path.c_str());
 		m_client->start(std::bind(&AVSProxy::recv_callback, this, std::placeholders::_1));
 
 		if (in.contains("slave_log")) {
-			std::wstring log_path = utf8_to_utf16(in.get_prop<std::string>("slave_log"));
+			std::filesystem::path log_path = std::filesystem::u8path(in.get_prop<std::string>("slave_log"));
 			m_client->send_async(std::make_unique<ipc_client::CommandSetLogFile>(log_path));
 		}
 
